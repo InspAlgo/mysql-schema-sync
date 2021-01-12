@@ -4,7 +4,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * @author me
+ * @author InspAlgo
  * @date 2021/1/11 11:18 UTC+08:00
  */
 public class TableThreadFactory implements ThreadFactory {

@@ -5,7 +5,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * @author me
+ * @author InspAlgo
  * @date 2021/1/11 11:25 UTC+08:00
  */
 public class TableThreadPoolExecutor {
