@@ -30,8 +30,6 @@ public class Database {
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
-    private ThreadPoolExecutor executor;
-
     public String getDbName() {
         return dbName;
     }
@@ -160,8 +158,6 @@ public class Database {
 
                 tableMap.put(tableName, table);
             }
-
-            executor = TableThreadPoolExecutor.make(dbName, (int) (tableMap.size() * 1.25));
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -243,6 +239,7 @@ public class Database {
             return;
         }
 
+        ThreadPoolExecutor executor = TableThreadPoolExecutor.make(dbName, tableNames.size());
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
@@ -296,6 +293,7 @@ public class Database {
                 }
             }
         } finally {
+            executor.shutdownNow();
             try {
                 if (connection != null) {
                     connection.close();
@@ -316,7 +314,6 @@ public class Database {
             jdbcUrl = null;
             tableMap.clear();
             tableMap = null;
-            executor.shutdownNow();
         } catch (Exception ignore) {
 
         }
