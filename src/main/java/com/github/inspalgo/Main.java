@@ -33,11 +33,11 @@ public class Main {
 
         ThreadPoolExecutor executor = TableThreadPoolExecutor.make("AccessTables");
         executor.execute(() -> {
-            originDb.accessTables();
+            originDb.init();
             countDownLatch.countDown();
         });
         executor.execute(() -> {
-            targetDb.accessTables();
+            targetDb.init();
             countDownLatch.countDown();
         });
 
@@ -68,7 +68,9 @@ public class Main {
         targetDb.deleteTables(deleteTableNames);
         System.out.println();
 
-        originDb.getTableMap().forEach((k, v) -> System.out.printf("TABLE: [%s]%n", v));
+        System.out.println("==== Run Sync Schema ====");
+        targetDb.syncSchema(originDb, modifyTableNames);
+        System.out.println();
 
         originDb.destroyAllAttributes();
         targetDb.destroyAllAttributes();

@@ -2,12 +2,15 @@ package com.github.inspalgo.core;
 
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -23,10 +26,11 @@ public class Database {
     private String password;
     private String host;
     private String port;
+    private String jdbcUrl;
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
-    private ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Database");
+    private ThreadPoolExecutor executor;
 
     public String getDbName() {
         return dbName;
@@ -91,9 +95,18 @@ public class Database {
         return tableMap.getOrDefault(tableName, null);
     }
 
-    public void accessTables() {
-        try (Connection connection = DriverManager.getConnection(
-            String.format("jdbc:mysql://%s:%s/%s?useUnicode=true", host, port, dbName), username, password)) {
+    public String getJdbcUrl() {
+        if (host == null || port == null || dbName == null) {
+            throw new IllegalArgumentException("host,port,dbName may be null!");
+        }
+        if (jdbcUrl == null || jdbcUrl.isEmpty()) {
+            jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useUnicode=true", host, port, dbName);
+        }
+        return jdbcUrl;
+    }
+
+    public void init() {
+        try (Connection connection = DriverManager.getConnection(getJdbcUrl(), username, password)) {
             String queryTables = "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?";
             PreparedStatement preparedStatementTable = connection.prepareStatement(queryTables);
             preparedStatementTable.setString(1, dbName);
@@ -129,62 +142,140 @@ public class Database {
                 String[] createTableLines = table.getCreateTable().split("\n");
                 List<Column> columns = table.getColumns();
                 for (int i = 1, columnSize = columns.size(); i <= columnSize; i++) {
-                    columns.get(i - 1).setDdl(createTableLines[i].trim().replace(",", ""));
+                    String ddl = createTableLines[i].trim();
+                    if (ddl.charAt(ddl.length() - 1) == ',') {
+                        ddl = ddl.substring(0, ddl.length() - 1);
+                    }
+                    columns.get(i - 1).setDdl(ddl);
                 }
                 for (int i = columns.size() + 1, end = createTableLines.length - 1; i < end; i++) {
-                    table.addIndex(createTableLines[i].trim().replace(",", ""));
+                    String ddl = createTableLines[i].trim();
+                    if (ddl.charAt(ddl.length() - 1) == ',') {
+                        ddl = ddl.substring(0, ddl.length() - 1);
+                    }
+                    table.addIndex(ddl);
                 }
+
+                table.setAttributes(parseAttributes(createTableLines[createTableLines.length - 1]));
 
                 tableMap.put(tableName, table);
             }
+
+            executor = TableThreadPoolExecutor.make(dbName, (int) (tableMap.size() * 1.25));
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
-    public void addTables(List<Table> tables) {
+    public void addTables(final List<Table> tables) {
         if (tables == null || tables.size() <= 0) {
             return;
         }
 
-        try (Connection connection = DriverManager.getConnection(
-            String.format("jdbc:mysql://%s:%s/%s?useUnicode=true", host, port, dbName), username, password)) {
-            CountDownLatch countDownLatch = new CountDownLatch(tables.size());
+        Connection connection = null;
+        try {
+            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            Statement statement = connection.createStatement();
             for (Table table : tables) {
-                executor.execute(() -> {
-                    try {
-                        String createTable = table.getCreateTable();
-                        PreparedStatement ps = connection.prepareStatement(createTable);
-                        ps.execute();
-                        System.out.printf("TABLE [%s] IS CREATED.%n", table.getName());
-                    } catch (SQLException e) {
-                        e.printStackTrace();
-                    } finally {
-                        countDownLatch.countDown();
-                    }
-                });
+                statement.addBatch(table.getCreateTable());
             }
-            countDownLatch.await();
-        } catch (SQLException | InterruptedException e) {
+            statement.executeBatch();
+            statement.clearBatch();
+            statement.close();
+            connection.commit();
+        } catch (SQLException e) {
             e.printStackTrace();
+            if (connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
     }
 
-    public void deleteTables(List<String> tableNames) {
+    public void deleteTables(final List<String> tableNames) {
+        if (tableNames == null || tableNames.size() <= 0) {
+            return;
+        }
+        Connection connection = null;
+        try {
+            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            Statement statement = connection.createStatement();
+            for (String tableName : tableNames) {
+                statement.addBatch("DROP TABLE " + tableName);
+            }
+            statement.executeBatch();
+            statement.clearBatch();
+            statement.close();
+            connection.commit();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            if (connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void syncSchema(final Database originDb, final List<String> tableNames) {
         if (tableNames == null || tableNames.size() <= 0) {
             return;
         }
 
-        try (Connection connection = DriverManager.getConnection(
-            String.format("jdbc:mysql://%s:%s/%s?useUnicode=true", host, port, dbName), username, password)) {
+        Connection connection = null;
+        try {
+            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            connection.setAutoCommit(false);
             CountDownLatch countDownLatch = new CountDownLatch(tableNames.size());
             for (String tableName : tableNames) {
+                Connection finalConnection = connection;
                 executor.execute(() -> {
+                    Table originTable = originDb.getTableByName(tableName);
+                    Table targetTable = getTableByName(tableName);
+                    List<String> ddl = SchemaSync.generateTableDdl(originTable, targetTable);
                     try {
-                        String deleteTable = "DROP TABLE " + tableName;
-                        PreparedStatement ps = connection.prepareStatement(deleteTable);
-                        ps.execute();
-                        System.out.printf("TABLE [%s] IS DELETED.%n", tableName);
+                        Statement statement = finalConnection.createStatement();
+                        for (String s : ddl) {
+                            try {
+                                statement.addBatch(s);
+                            } catch (SQLException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        if (!ddl.isEmpty()) {
+                            statement.executeBatch();
+                            System.out.println(ddl);
+                            System.out.printf("SCHEMA [%s] IS SYNC.%n", tableName);
+                        }
+                        statement.clearBatch();
+                        statement.close();
+                    } catch (BatchUpdateException e) {
+                        int[] updateCounts = e.getUpdateCounts();
+                        System.out.println(Arrays.toString(updateCounts));
+                        System.out.println(ddl);
+                        System.out.println(originTable.getCreateTable());
+                        System.out.println(targetTable.getCreateTable());
                     } catch (SQLException e) {
                         e.printStackTrace();
                     } finally {
@@ -193,8 +284,25 @@ public class Database {
                 });
             }
             countDownLatch.await();
-        } catch (SQLException | InterruptedException e) {
+            connection.commit();
+        } catch (InterruptedException e) {
             e.printStackTrace();
+        } catch (SQLException e) {
+            if (connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -205,11 +313,45 @@ public class Database {
             password = null;
             host = null;
             port = null;
+            jdbcUrl = null;
             tableMap.clear();
             tableMap = null;
             executor.shutdownNow();
         } catch (Exception ignore) {
 
         }
+    }
+
+    private static List<String> parseAttributes(String ddl) {
+        ArrayList<String> result = new ArrayList<>();
+        StringBuilder sb = new StringBuilder(ddl.length() / 4);
+        boolean skip = true;
+        for (int i = 0, size = ddl.length(); i < size; i++) {
+            char c = ddl.charAt(i);
+            if (skip && (c == ')' || c == ' ')) {
+                continue;
+            }
+            skip = false;
+            if (c == '=') {
+                sb.append(c);
+                while (i + 1 < size && ddl.charAt(i + 1) == ' ') {
+                    i++;
+                }
+                for (int k = i + 1; k < size; k++) {
+                    c = ddl.charAt(k);
+                    if (c == ' ' || c == ';') {
+                        i = k;
+                        break;
+                    }
+                    sb.append(c);
+                }
+                result.add(sb.toString());
+                sb.delete(0, sb.length());
+                skip = true;
+                continue;
+            }
+            sb.append(c);
+        }
+        return result;
     }
 }

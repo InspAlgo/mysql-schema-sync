@@ -10,16 +10,10 @@ import java.util.Objects;
  */
 public class Table {
     private String name;
-    private List<Column> columns = new ArrayList<>();
-    private List<String> indexes = new ArrayList<>();
+    private final List<Column> columns = new ArrayList<>();
+    private final List<String> indexes = new ArrayList<>();
+    private List<String> attributes;
     private String createTable;
-
-    public Column getFirstColumn() {
-        if (columns == null || columns.size() == 0) {
-            return null;
-        }
-        return columns.get(0);
-    }
 
     public String getName() {
         return name;
@@ -31,10 +25,6 @@ public class Table {
 
     public List<Column> getColumns() {
         return columns;
-    }
-
-    public void setColumns(List<Column> columns) {
-        this.columns = columns;
     }
 
     public void addColumn(Column column) {
@@ -55,6 +45,15 @@ public class Table {
         return result;
     }
 
+    public Column getColumnByName(String columnName) {
+        for (Column column : columns) {
+            if (column.getColumnName().equals(columnName)) {
+                return column;
+            }
+        }
+        return null;
+    }
+
     public List<String> getIndexes() {
         ArrayList<String> result = new ArrayList<>(indexes.size());
         result.addAll(indexes);
@@ -65,8 +64,14 @@ public class Table {
         indexes.add(index);
     }
 
-    public boolean containsIndex(String index) {
-        return indexes.contains(index);
+    public List<String> getAttributes() {
+        ArrayList<String> result = new ArrayList<>(attributes.size());
+        result.addAll(attributes);
+        return result;
+    }
+
+    public void setAttributes(List<String> attributes) {
+        this.attributes = attributes;
     }
 
     @Override
@@ -92,6 +97,7 @@ public class Table {
             "name='" + name + '\'' +
             ", columns=" + columns +
             ", indexes=" + indexes +
+            ", attributes=" + attributes +
 //            ", createTable='" + createTable + '\'' +
             '}';
     }
