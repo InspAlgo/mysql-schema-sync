@@ -30,6 +30,15 @@ public class Database {
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
+    public Database setConnectMetaData(ConnectMetaData connectMetaData) {
+        dbName = connectMetaData.getDatabase();
+        username = connectMetaData.getUsername();
+        password = connectMetaData.getPassword();
+        host = connectMetaData.getHost();
+        port = connectMetaData.getPort();
+        return this;
+    }
+
     public String getDbName() {
         return dbName;
     }
@@ -122,6 +131,8 @@ public class Database {
                 while (resultSetCreateTable.next()) {
                     table.setCreateTable(resultSetCreateTable.getString(2));
                 }
+                preparedStatementCreateTable.close();
+                resultSetCreateTable.close();
 
                 String queryColumns = "SELECT COLUMN_NAME,ORDINAL_POSITION " +
                     "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
@@ -136,6 +147,8 @@ public class Database {
                           .setOrdinalPosition(resultSetColumn.getString("ORDINAL_POSITION"));
                     table.addColumn(column);
                 }
+                preparedStatementColumn.close();
+                resultSetColumn.close();
 
                 String[] createTableLines = table.getCreateTable().split("\n");
                 List<Column> columns = table.getColumns();
@@ -171,9 +184,11 @@ public class Database {
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            connection.setAutoCommit(false);
             Statement statement = connection.createStatement();
             for (Table table : tables) {
                 statement.addBatch(table.getCreateTable());
+                System.out.printf("SCHEMA [%s] IS CREATED.%n", table.getName());
             }
             statement.executeBatch();
             statement.clearBatch();
@@ -206,9 +221,11 @@ public class Database {
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            connection.setAutoCommit(false);
             Statement statement = connection.createStatement();
             for (String tableName : tableNames) {
                 statement.addBatch("DROP TABLE " + tableName);
+                System.out.printf("SCHEMA [%s] IS DELETED.%n", tableName);
             }
             statement.executeBatch();
             statement.clearBatch();
