@@ -15,8 +15,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class Main {
 
     public static void main(String[] args) {
-        String originDbName = args[0];
-        if (originDbName == null || originDbName.isEmpty()) {
+        String sourceDbName = args[0];
+        if (sourceDbName == null || sourceDbName.isEmpty()) {
             System.exit(-1);
         }
         String targetDbName = args[1];
@@ -24,8 +24,8 @@ public class Main {
             System.exit(-1);
         }
 
-        Database originDb = new Database();
-        originDb.setDbName(originDbName).setHost("127.0.0.1").setPort("3306").setUsername("root").setPassword("root");
+        Database sourceDb = new Database();
+        sourceDb.setDbName(sourceDbName).setHost("127.0.0.1").setPort("3306").setUsername("root").setPassword("root");
         Database targetDb = new Database();
         targetDb.setDbName(targetDbName).setHost("127.0.0.1").setPort("3306").setUsername("root").setPassword("root");
 
@@ -33,7 +33,7 @@ public class Main {
 
         ThreadPoolExecutor executor = TableThreadPoolExecutor.make("AccessTables");
         executor.execute(() -> {
-            originDb.init();
+            sourceDb.init();
             countDownLatch.countDown();
         });
         executor.execute(() -> {
@@ -49,18 +49,18 @@ public class Main {
         }
 
         // 要创建的新表
-        ArrayList<String> createTableNames = originDb.getAllTableNames();
+        ArrayList<String> createTableNames = sourceDb.getAllTableNames();
         createTableNames.removeAll(targetDb.getAllTableNames());
         // 可能要修改的表
-        ArrayList<String> modifyTableNames = originDb.getAllTableNames();
+        ArrayList<String> modifyTableNames = sourceDb.getAllTableNames();
         modifyTableNames.retainAll(targetDb.getAllTableNames());
         // 要删除的旧表
         ArrayList<String> deleteTableNames = targetDb.getAllTableNames();
-        deleteTableNames.removeAll(originDb.getAllTableNames());
+        deleteTableNames.removeAll(sourceDb.getAllTableNames());
 
         System.out.println("==== Run Create Tables ====");
         ArrayList<Table> createdTables = new ArrayList<>(createTableNames.size());
-        createTableNames.forEach(tableName -> createdTables.add(originDb.getTableByName(tableName)));
+        createTableNames.forEach(tableName -> createdTables.add(sourceDb.getTableByName(tableName)));
         targetDb.addTables(createdTables);
         System.out.println();
 
@@ -69,10 +69,10 @@ public class Main {
         System.out.println();
 
         System.out.println("==== Run Sync Schema ====");
-        targetDb.syncSchema(originDb, modifyTableNames);
+        targetDb.syncSchema(sourceDb, modifyTableNames);
         System.out.println();
 
-        originDb.destroyAllAttributes();
+        sourceDb.destroyAllAttributes();
         targetDb.destroyAllAttributes();
     }
 }

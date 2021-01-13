@@ -234,7 +234,7 @@ public class Database {
         }
     }
 
-    public void syncSchema(final Database originDb, final List<String> tableNames) {
+    public void syncSchema(final Database sourceDb, final List<String> tableNames) {
         if (tableNames == null || tableNames.size() <= 0) {
             return;
         }
@@ -248,9 +248,9 @@ public class Database {
             for (String tableName : tableNames) {
                 Connection finalConnection = connection;
                 executor.execute(() -> {
-                    Table originTable = originDb.getTableByName(tableName);
+                    Table sourceTable = sourceDb.getTableByName(tableName);
                     Table targetTable = getTableByName(tableName);
-                    List<String> ddl = SchemaSync.generateTableDdl(originTable, targetTable);
+                    List<String> ddl = SchemaSync.generateTableDdl(sourceTable, targetTable);
                     try {
                         Statement statement = finalConnection.createStatement();
                         for (String s : ddl) {
@@ -271,7 +271,7 @@ public class Database {
                         int[] updateCounts = e.getUpdateCounts();
                         System.out.println(Arrays.toString(updateCounts));
                         System.out.println(ddl);
-                        System.out.println(originTable.getCreateTable());
+                        System.out.println(sourceTable.getCreateTable());
                         System.out.println(targetTable.getCreateTable());
                     } catch (SQLException e) {
                         e.printStackTrace();
