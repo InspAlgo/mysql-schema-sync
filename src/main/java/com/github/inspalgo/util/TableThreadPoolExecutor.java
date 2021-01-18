@@ -9,11 +9,6 @@ import java.util.concurrent.TimeUnit;
  * @date 2021/1/11 11:25 UTC+08:00
  */
 public class TableThreadPoolExecutor {
-    public static ThreadPoolExecutor make(String name) {
-        return new ThreadPoolExecutor(getCorePoolSize(), getMaxPoolSize(), 2L, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(20), new TableThreadFactory(name),
-            new ThreadPoolExecutor.AbortPolicy());
-    }
 
     public static ThreadPoolExecutor make(String name, int blockingQueueCapacity) {
         return new ThreadPoolExecutor(getCorePoolSize(), getMaxPoolSize(), 2L, TimeUnit.SECONDS,

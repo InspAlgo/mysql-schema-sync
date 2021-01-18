@@ -338,7 +338,7 @@ public class Database {
 
     private static List<String> parseAttributes(String ddl) {
         ArrayList<String> result = new ArrayList<>();
-        StringBuilder sb = new StringBuilder(ddl.length() / 4);
+        StringBuilder sb = new StringBuilder(ddl.length());
         boolean skip = true;
         for (int i = 0, size = ddl.length(); i < size; i++) {
             char c = ddl.charAt(i);
