@@ -19,7 +19,7 @@ public class Arguments implements Runnable {
     private String source;
 
     @Option(names = {"-t", "--target"}, required = true, description = "Target Database.\nE.g. 'mysql#username:password@host:port/database_name' .")
-    private List<String> target;
+    private List<String> targets;
 
     @Option(names = {"-l", "--log"}, description = "Display Executing Log")
     private boolean log = false;
@@ -41,10 +41,10 @@ public class Arguments implements Runnable {
             }
         }
 
-        if (target != null && target.size() > 0) {
-            targetConnectMetaDataList = new ArrayList<>(target.size());
+        if (targets != null && targets.size() > 0) {
+            targetConnectMetaDataList = new ArrayList<>(targets.size());
 
-            for (String t : target) {
+            for (String t : targets) {
                 ConnectMetaData targetConnectMetaData = parseUri(t);
                 if (targetConnectMetaData != null) {
                     targetConnectMetaDataList.add(targetConnectMetaData);

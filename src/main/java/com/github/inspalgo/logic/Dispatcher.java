@@ -43,6 +43,7 @@ public class Dispatcher {
             countDownLatch.await();
         } catch (InterruptedException e) {
             e.printStackTrace();
+            return;
         }
 
         CountDownLatch countDownLatchSync = new CountDownLatch(targetDbs.size());
@@ -79,9 +80,10 @@ public class Dispatcher {
 
         try {
             countDownLatchSync.await();
-            executor.shutdownNow();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        } finally {
+            executor.shutdownNow();
         }
         sourceDb.destroyAllAttributes();
     }
