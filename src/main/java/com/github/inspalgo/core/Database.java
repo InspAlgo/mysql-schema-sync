@@ -160,14 +160,17 @@ public class Database {
                     columns.get(i - 1).setDdl(ddl);
                 }
                 for (int i = columns.size() + 1, end = createTableLines.length - 1; i < end; i++) {
-                    String ddl = createTableLines[i].trim();
-                    if (ddl.charAt(ddl.length() - 1) == ',') {
-                        ddl = ddl.substring(0, ddl.length() - 1);
-                    }
-                    table.addIndex(ddl);
+                    table.addIndex(parseIndex(createTableLines[i].trim()));
                 }
 
-                table.setAttributes(parseAttributes(createTableLines[createTableLines.length - 1]));
+                List<String> attributes = parseAttributes(createTableLines[createTableLines.length - 1]);
+                for (int i = 0, size = attributes.size(); i < size; i++) {
+                    if (attributes.get(i).startsWith("AUTO_INCREMENT")) {
+                        table.setAutoIncrement(attributes.get(i));
+                        attributes.remove(i);
+                    }
+                }
+                table.setAttributes(attributes);
 
                 tableMap.put(tableName, table);
             }
@@ -334,6 +337,20 @@ public class Database {
         } catch (Exception ignore) {
 
         }
+    }
+
+    private static String parseIndex(String originDdl) {
+        if (originDdl.charAt(originDdl.length() - 1) == ',') {
+            originDdl = originDdl.substring(0, originDdl.length() - 1);
+        }
+
+        // 因为 BTREE 是默认索引类型，所以比对时先将 USING BTREE 忽略掉
+        int btreeIndex = originDdl.lastIndexOf("USING BTREE");
+        if (btreeIndex != -1) {
+            originDdl = originDdl.substring(0, btreeIndex).trim();
+        }
+
+        return originDdl;
     }
 
     private static List<String> parseAttributes(String ddl) {
