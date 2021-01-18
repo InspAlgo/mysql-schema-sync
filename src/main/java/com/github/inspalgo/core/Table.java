@@ -12,6 +12,7 @@ public class Table {
     private String name;
     private final List<Column> columns = new ArrayList<>();
     private final List<String> indexes = new ArrayList<>();
+    private String autoIncrement = null;
     private List<String> attributes;
     private String createTable;
 
@@ -62,6 +63,14 @@ public class Table {
 
     public void addIndex(String index) {
         indexes.add(index);
+    }
+
+    public String getAutoIncrement() {
+        return autoIncrement;
+    }
+
+    public void setAutoIncrement(String autoIncrement) {
+        this.autoIncrement = autoIncrement;
     }
 
     public List<String> getAttributes() {

@@ -19,14 +19,22 @@ public class SchemaSync {
         ArrayList<String> result = new ArrayList<>();
         String tableName = targetTable.getName();
 
-        // 1. 删除多余字段
+        // 表的属性比对，如引擎、字符集等，表属性要同步要先执行
+        // 先排除表属性中的自增主键同步，因为值的大小根据各个库实际数据大小定，要创建自增主键，只需指定好自增字段即可
+        List<String> modifyAttributes = sourceTable.getAttributes();
+        modifyAttributes.removeAll(targetTable.getAttributes());
+        if (!modifyAttributes.isEmpty()) {
+            result.add(String.format("ALTER TABLE `%s` %s", tableName, String.join(",", modifyAttributes)));
+        }
+
+        // 删除多余字段
         ArrayList<String> deleteColumnNames = targetTable.getAllColumnNames();
         deleteColumnNames.removeAll(sourceTable.getAllColumnNames());
         for (String columnName : deleteColumnNames) {
             result.add(String.format("ALTER TABLE `%s` DROP COLUMN `%s`", tableName, columnName));
         }
 
-        // 2. 判断增加/修改字段，同时保持字段相对顺序同步
+        // 判断增加/修改字段，同时保持字段相对顺序同步
         ArrayList<String> sourceColumnNames = sourceTable.getAllColumnNames();
         List<Column> sourceColumns = sourceTable.getColumns();
         ArrayList<String> targetColumnNames = targetTable.getAllColumnNames();
@@ -53,23 +61,17 @@ public class SchemaSync {
             position = String.format("AFTER `%s`", sourceColumnNames.get(i));
         }
 
-        // 3. 索引同步
+        // 索引同步
         List<String> deleteIndexes = targetTable.getIndexes();
         deleteIndexes.removeAll(sourceTable.getIndexes());
         for (String index : deleteIndexes) {
-            result.add(String.format("ALTER TABLE `%s` DROP %s", tableName, index.substring(0, index.indexOf('('))));
+            result.add(String.format("ALTER TABLE `%s` DROP %s",
+                tableName, index.substring(0, index.indexOf('(')).trim()));
         }
         List<String> addIndexes = sourceTable.getIndexes();
         addIndexes.removeAll(targetTable.getIndexes());
         for (String index : addIndexes) {
             result.add(String.format("ALTER TABLE `%s` ADD %s", tableName, index));
-        }
-
-        // 4. 表的属性比对，如引擎、字符集等
-        List<String> modifyAttributes = sourceTable.getAttributes();
-        modifyAttributes.removeAll(targetTable.getAttributes());
-        if (!modifyAttributes.isEmpty()) {
-            result.add(String.format("ALTER TABLE `%s` %s", tableName, String.join(",", modifyAttributes)));
         }
 
         return result;
