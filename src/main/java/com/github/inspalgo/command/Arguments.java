@@ -2,6 +2,7 @@ package com.github.inspalgo.command;
 
 import com.github.inspalgo.core.ConnectMetaData;
 import com.github.inspalgo.logic.Dispatcher;
+import com.github.inspalgo.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,23 +22,20 @@ public class Arguments implements Runnable {
     @Option(names = {"-t", "--target"}, required = true, description = "Target Database.\nE.g. 'mysql#username:password@host:port/database_name' .")
     private List<String> targets;
 
-    @Option(names = {"-l", "--log"}, description = "Display Executing Log")
-    private boolean log = false;
+    @Option(names = {"-p", "--preview"}, description = "Executing Process Preview")
+    private boolean preview = false;
 
     @Override
     public void run() {
         ConnectMetaData sourceConnectMetaData = null;
         List<ConnectMetaData> targetConnectMetaDataList = null;
 
-        if (log) {
-            System.out.println("Print Logs");
-        }
         if (source != null) {
             sourceConnectMetaData = parseUri(source);
             if (sourceConnectMetaData != null) {
-                System.out.println(sourceConnectMetaData);
+                Log.COMMON.info(sourceConnectMetaData.toString());
             } else {
-                System.err.println(source);
+                Log.COMMON.error(source);
             }
         }
 
@@ -49,13 +47,19 @@ public class Arguments implements Runnable {
                 if (targetConnectMetaData != null) {
                     targetConnectMetaDataList.add(targetConnectMetaData);
                 } else {
-                    System.err.printf("Target argument format is error: %s%n", t);
+                    Log.COMMON.error("Target argument format is error: {}", t);
                 }
             }
-            System.out.println(targetConnectMetaDataList);
+
+            Log.COMMON.info(targetConnectMetaDataList.toString());
         }
 
-        Dispatcher.onlineSchemaSync(sourceConnectMetaData, targetConnectMetaDataList);
+        try {
+            Dispatcher.onlineSchemaSync(sourceConnectMetaData, targetConnectMetaDataList, preview);
+        } catch (Exception e) {
+            Log.COMMON.error("", e);
+            System.exit(-1);
+        }
     }
 
     private ConnectMetaData parseUri(String uri) {

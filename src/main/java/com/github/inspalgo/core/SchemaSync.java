@@ -38,6 +38,8 @@ public class SchemaSync {
         ArrayList<String> sourceColumnNames = sourceTable.getAllColumnNames();
         List<Column> sourceColumns = sourceTable.getColumns();
         ArrayList<String> targetColumnNames = targetTable.getAllColumnNames();
+        // 要移除已删除字段，否则会导致字段顺序不同步
+        targetColumnNames.removeAll(deleteColumnNames);
 
         String position = "FIRST";
         for (int i = 0, size = sourceColumnNames.size(); i < size; i++) {

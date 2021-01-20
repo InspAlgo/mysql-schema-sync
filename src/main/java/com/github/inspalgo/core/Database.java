@@ -1,5 +1,6 @@
 package com.github.inspalgo.core;
 
+import com.github.inspalgo.util.Log;
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
 import java.sql.BatchUpdateException;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -29,6 +31,10 @@ public class Database {
     private String jdbcUrl;
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
+
+    private HashMap<String, String> addTablesDdlMap;
+    private HashMap<String, String> deleteTablesDdlMap;
+    private ConcurrentHashMap<String, List<String>> syncSchemaDdlMap;
 
     public Database setConnectMetaData(ConnectMetaData connectMetaData) {
         dbName = connectMetaData.getDatabase();
@@ -168,6 +174,8 @@ public class Database {
                     if (attributes.get(i).startsWith("AUTO_INCREMENT")) {
                         table.setAutoIncrement(attributes.get(i));
                         attributes.remove(i);
+                        // 因为调用了 remove 所以 size 要自减，否则越界异常
+                        size--;
                     }
                 }
                 table.setAttributes(attributes);
@@ -175,35 +183,53 @@ public class Database {
                 tableMap.put(tableName, table);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            Log.COMMON.error("", e);
         }
     }
 
-    public void addTables(final List<Table> tables) {
+    public void generateAddTablesDdlList(final List<Table> tables) {
         if (tables == null || tables.size() <= 0) {
             return;
         }
+        if (addTablesDdlMap != null) {
+            addTablesDdlMap.clear();
+        }
+        addTablesDdlMap = new HashMap<>(tables.size());
+        for (Table table : tables) {
+            String createTable = table.getCreateTable();
+            if (table.getAutoIncrement() != null) {
+                // 如果存在自增，则需要删除掉表属性中的自增属性，防止带入自增值
+                createTable = createTable.replaceAll(table.getAutoIncrement(), "");
+            }
+            addTablesDdlMap.put(table.getName(), createTable);
+        }
+    }
+
+    public void addTables() {
+        if (addTablesDdlMap == null || addTablesDdlMap.size() == 0) {
+            Log.COMMON.error("Not Add Tables DDL.");
+            return;
+        }
 
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
             connection.setAutoCommit(false);
             Statement statement = connection.createStatement();
-            for (Table table : tables) {
-                statement.addBatch(table.getCreateTable());
-                System.out.printf("SCHEMA [%s] IS CREATED.%n", table.getName());
+            for (String tableName : addTablesDdlMap.keySet()) {
+                statement.addBatch(addTablesDdlMap.get(tableName));
+                Log.COMMON.info("SCHEMA: [{}] IS CREATED.", tableName);
             }
             statement.executeBatch();
-            statement.clearBatch();
             statement.close();
             connection.commit();
         } catch (SQLException e) {
-            e.printStackTrace();
+            Log.COMMON.error("", e);
             if (connection != null) {
                 try {
                     connection.rollback();
                 } catch (SQLException ex) {
-                    ex.printStackTrace();
+                    Log.COMMON.error("", e);
                 }
             }
         } finally {
@@ -212,35 +238,49 @@ public class Database {
                     connection.close();
                 }
             } catch (SQLException e) {
-                e.printStackTrace();
+                Log.COMMON.error("", e);
             }
         }
     }
 
-    public void deleteTables(final List<String> tableNames) {
+    public void generateDeleteTablesDdlList(final List<String> tableNames) {
         if (tableNames == null || tableNames.size() <= 0) {
             return;
         }
+        if (deleteTablesDdlMap != null) {
+            deleteTablesDdlMap.clear();
+        }
+        deleteTablesDdlMap = new HashMap<>(tableNames.size());
+        for (String tableName : tableNames) {
+            deleteTablesDdlMap.put(tableName, "DROP TABLE " + tableName);
+        }
+    }
+
+    public void deleteTables() {
+        if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
+            Log.COMMON.error("Not Delete Tables DDL.");
+            return;
+        }
+
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
             connection.setAutoCommit(false);
             Statement statement = connection.createStatement();
-            for (String tableName : tableNames) {
-                statement.addBatch("DROP TABLE " + tableName);
-                System.out.printf("SCHEMA [%s] IS DELETED.%n", tableName);
+            for (String tableName : deleteTablesDdlMap.keySet()) {
+                statement.addBatch(deleteTablesDdlMap.get(tableName));
+                Log.COMMON.info("SCHEMA [{}] IS DELETED.", tableName);
             }
             statement.executeBatch();
-            statement.clearBatch();
             statement.close();
             connection.commit();
         } catch (SQLException e) {
-            e.printStackTrace();
+            Log.COMMON.error("", e);
             if (connection != null) {
                 try {
                     connection.rollback();
                 } catch (SQLException ex) {
-                    ex.printStackTrace();
+                    Log.COMMON.error("", ex);
                 }
             }
         } finally {
@@ -249,78 +289,98 @@ public class Database {
                     connection.close();
                 }
             } catch (SQLException e) {
-                e.printStackTrace();
+                Log.COMMON.error("", e);
             }
         }
     }
 
-    public void syncSchema(final Database sourceDb, final List<String> tableNames) {
+    public void generateSyncSchemaDdlList(final Database sourceDb, final List<String> tableNames) {
         if (tableNames == null || tableNames.size() <= 0) {
             return;
         }
-
+        if (syncSchemaDdlMap != null) {
+            syncSchemaDdlMap.clear();
+        }
+        syncSchemaDdlMap = new ConcurrentHashMap<>(tableNames.size());
         ThreadPoolExecutor executor = TableThreadPoolExecutor.make(dbName, tableNames.size());
+        CountDownLatch countDownLatch = new CountDownLatch(tableNames.size());
+        for (String tableName : tableNames) {
+            final ConcurrentHashMap<String, List<String>> ddlMap = syncSchemaDdlMap;
+            executor.execute(() -> {
+                Table sourceTable = sourceDb.getTableByName(tableName);
+                Table targetTable = getTableByName(tableName);
+                List<String> ddl = SchemaSync.generateTableDdl(sourceTable, targetTable);
+                if (ddl.size() > 0) {
+                    ddlMap.put(tableName, ddl);
+                }
+                countDownLatch.countDown();
+            });
+        }
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException e) {
+            Log.COMMON.error("", e);
+        }
+        executor.shutdownNow();
+    }
+
+    public void syncSchema() {
+        if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
+            Log.COMMON.error("Not Sync Schema DDL.");
+            return;
+        }
+
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
             connection.setAutoCommit(false);
-            CountDownLatch countDownLatch = new CountDownLatch(tableNames.size());
-            for (String tableName : tableNames) {
-                Connection finalConnection = connection;
-                executor.execute(() -> {
-                    Table sourceTable = sourceDb.getTableByName(tableName);
-                    Table targetTable = getTableByName(tableName);
-                    List<String> ddl = SchemaSync.generateTableDdl(sourceTable, targetTable);
-                    try {
-                        Statement statement = finalConnection.createStatement();
-                        for (String s : ddl) {
-                            try {
-                                statement.addBatch(s);
-                            } catch (SQLException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                        if (!ddl.isEmpty()) {
-                            statement.executeBatch();
-                            System.out.println(ddl);
-                            System.out.printf("SCHEMA [%s] IS SYNC.%n", tableName);
-                        }
-                        statement.clearBatch();
-                        statement.close();
-                    } catch (BatchUpdateException e) {
-                        int[] updateCounts = e.getUpdateCounts();
-                        System.out.println(Arrays.toString(updateCounts));
-                        System.out.println(ddl);
-                        System.out.println(sourceTable.getCreateTable());
-                        System.out.println(targetTable.getCreateTable());
-                    } catch (SQLException e) {
-                        e.printStackTrace();
-                    } finally {
-                        countDownLatch.countDown();
+            for (String tableName : syncSchemaDdlMap.keySet()) {
+                List<String> ddl = syncSchemaDdlMap.get(tableName);
+                try {
+                    Statement statement = connection.createStatement();
+                    for (String s : ddl) {
+                        statement.addBatch(s);
                     }
-                });
+                    statement.executeBatch();
+                    statement.close();
+                    Log.COMMON.info("SCHEMA [{}] IS SYNC.", tableName);
+                } catch (BatchUpdateException e) {
+                    int[] updateCounts = e.getUpdateCounts();
+                    Log.COMMON.error(Arrays.toString(updateCounts));
+                    Log.COMMON.error(ddl.toString());
+                } catch (SQLException e) {
+                    Log.COMMON.error("", e);
+                }
             }
-            countDownLatch.await();
             connection.commit();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         } catch (SQLException e) {
             if (connection != null) {
                 try {
                     connection.rollback();
                 } catch (SQLException ex) {
-                    ex.printStackTrace();
+                    Log.COMMON.error("", ex);
                 }
             }
         } finally {
-            executor.shutdownNow();
             try {
                 if (connection != null) {
                     connection.close();
                 }
             } catch (SQLException e) {
-                e.printStackTrace();
+                Log.COMMON.error("", e);
             }
+        }
+    }
+
+    public void displayPreview() {
+        for (String tableName : deleteTablesDdlMap.keySet()) {
+            Log.PREVIEW.info(deleteTablesDdlMap.get(tableName));
+        }
+        for (String tableName : addTablesDdlMap.keySet()) {
+            Log.PREVIEW.info(addTablesDdlMap.get(tableName));
+        }
+        for (String tableName : syncSchemaDdlMap.keySet()) {
+            Log.PREVIEW.info(syncSchemaDdlMap.get(tableName).toString());
         }
     }
 
@@ -336,6 +396,32 @@ public class Database {
             tableMap = null;
         } catch (Exception ignore) {
 
+        }
+    }
+
+    private void executeCallback(Connection connection, Runnable task) {
+        try {
+            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
+            connection.setAutoCommit(false);
+            task.run();
+            connection.commit();
+        } catch (SQLException e) {
+            Log.COMMON.error("", e);
+            if (connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    Log.COMMON.error("", ex);
+                }
+            }
+        } finally {
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (SQLException e) {
+                Log.COMMON.error("", e);
+            }
         }
     }
 
