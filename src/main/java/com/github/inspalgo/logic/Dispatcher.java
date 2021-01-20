@@ -3,6 +3,7 @@ package com.github.inspalgo.logic;
 import com.github.inspalgo.core.ConnectMetaData;
 import com.github.inspalgo.core.Database;
 import com.github.inspalgo.core.Table;
+import com.github.inspalgo.util.Log;
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
 import java.util.ArrayList;
@@ -15,26 +16,48 @@ import java.util.concurrent.ThreadPoolExecutor;
  * @date 2021/1/13 14:51 UTC+08:00
  */
 public class Dispatcher {
-    public static void onlineSchemaSync(ConnectMetaData source, List<ConnectMetaData> targets) {
+    public static void onlineSchemaSync(ConnectMetaData source, List<ConnectMetaData> targets, boolean preview)
+        throws InterruptedException {
         if (source == null || targets == null || targets.isEmpty()) {
-            return;
+            throw new IllegalArgumentException("参数为空");
         }
 
         Database sourceDb = new Database().setConnectMetaData(source);
         List<Database> targetDbs = new ArrayList<>(targets.size());
 
+        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher", targets.size() + 1);
+
+        initDb(executor, sourceDb, targets, targetDbs);
+
+        syncTargets(executor, sourceDb, targetDbs, preview);
+
+        executor.shutdownNow();
+        sourceDb.destroyAllAttributes();
+    }
+
+    private static void initDb(ThreadPoolExecutor executor, Database sourceDb,
+                               List<ConnectMetaData> targets, List<Database> targetDbs) throws InterruptedException {
         CountDownLatch countDownLatch = new CountDownLatch(targets.size() + 1);
 
-        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("AccessTables", targets.size() + 1);
         executor.execute(() -> {
-            sourceDb.init();
-            countDownLatch.countDown();
+            try {
+                sourceDb.init();
+            } catch (Exception e) {
+                Log.COMMON.error("Source Database Init Exception", e);
+            } finally {
+                countDownLatch.countDown();
+            }
         });
         for (ConnectMetaData connectMetaData : targets) {
             Database targetDb = new Database().setConnectMetaData(connectMetaData);
             targetDbs.add(targetDb);
             executor.execute(() -> {
-                targetDb.init();
+                try {
+                    targetDb.init();
+                } catch (Exception e) {
+                    Log.COMMON.error("Target Database [{}] Init Exception", targetDb.getDbName());
+                    Log.COMMON.error("", e);
+                }
                 countDownLatch.countDown();
             });
         }
@@ -42,49 +65,54 @@ public class Dispatcher {
         try {
             countDownLatch.await();
         } catch (InterruptedException e) {
-            e.printStackTrace();
-            return;
+            executor.shutdownNow();
+            throw e;
         }
+    }
 
-        CountDownLatch countDownLatchSync = new CountDownLatch(targetDbs.size());
+    private static void syncTargets(ThreadPoolExecutor executor, Database sourceDb,
+                                    List<Database> targetDbs, boolean preview) throws InterruptedException {
+        CountDownLatch countDownLatch = new CountDownLatch(targetDbs.size());
+
         for (Database targetDb : targetDbs) {
             executor.execute(() -> {
-                // 要创建的新表
-                ArrayList<String> createTableNames = sourceDb.getAllTableNames();
-                createTableNames.removeAll(targetDb.getAllTableNames());
-                // 可能要修改的表
-                ArrayList<String> modifyTableNames = sourceDb.getAllTableNames();
-                modifyTableNames.retainAll(targetDb.getAllTableNames());
                 // 要删除的旧表
                 ArrayList<String> deleteTableNames = targetDb.getAllTableNames();
                 deleteTableNames.removeAll(sourceDb.getAllTableNames());
+                targetDb.generateDeleteTablesDdlList(deleteTableNames);
 
-                System.out.println("==== Run Delete Tables ====");
-                targetDb.deleteTables(deleteTableNames);
-                System.out.println();
-
-                System.out.println("==== Run Create Tables ====");
+                // 要创建的新表
+                ArrayList<String> createTableNames = sourceDb.getAllTableNames();
+                createTableNames.removeAll(targetDb.getAllTableNames());
                 ArrayList<Table> createdTables = new ArrayList<>(createTableNames.size());
                 createTableNames.forEach(tableName -> createdTables.add(sourceDb.getTableByName(tableName)));
-                targetDb.addTables(createdTables);
-                System.out.println();
+                targetDb.generateAddTablesDdlList(createdTables);
 
-                System.out.println("==== Run Sync Schema ====");
-                targetDb.syncSchema(sourceDb, modifyTableNames);
-                System.out.println();
+                // 可能要修改的表
+                ArrayList<String> modifyTableNames = sourceDb.getAllTableNames();
+                modifyTableNames.retainAll(targetDb.getAllTableNames());
+                targetDb.generateSyncSchemaDdlList(sourceDb, modifyTableNames);
+
+                if (preview) {
+                    Log.PREVIEW.info("=== DDL Preview Start ===");
+                    targetDb.displayPreview();
+                    Log.PREVIEW.info("=== DDL Preview End ===");
+                } else {
+                    targetDb.deleteTables();
+                    targetDb.addTables();
+                    targetDb.syncSchema();
+                }
 
                 targetDb.destroyAllAttributes();
-                countDownLatchSync.countDown();
+                countDownLatch.countDown();
             });
         }
 
         try {
-            countDownLatchSync.await();
+            countDownLatch.await();
         } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
             executor.shutdownNow();
+            throw e;
         }
-        sourceDb.destroyAllAttributes();
     }
 }
