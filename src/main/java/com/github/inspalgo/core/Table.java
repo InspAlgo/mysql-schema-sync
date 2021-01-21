@@ -12,8 +12,9 @@ public class Table {
     private String name;
     private final List<Column> columns = new ArrayList<>();
     private final List<String> indexes = new ArrayList<>();
+    private String primaryKey = null;
     private String autoIncrement = null;
-    private List<String> attributes;
+    private List<String> attributes = new ArrayList<>();
     private String createTable;
 
     public String getName() {
@@ -34,6 +35,15 @@ public class Table {
 
     public String getCreateTable() {
         return createTable;
+    }
+
+    public String getNewCreateTable() {
+        // 最后一个右括号，即 CREATE TABLE `` () 语句的 )
+        int lastCloseBracket = createTable.lastIndexOf(')');
+        StringBuilder sb = new StringBuilder(createTable);
+        sb.delete(lastCloseBracket + 1, createTable.length()).append(" ");
+        sb.append(String.join(" ", attributes));
+        return sb.toString();
     }
 
     public void setCreateTable(String createTable) {
@@ -65,6 +75,14 @@ public class Table {
         indexes.add(index);
     }
 
+    public String getPrimaryKey() {
+        return primaryKey;
+    }
+
+    public void setPrimaryKey(String primaryKey) {
+        this.primaryKey = primaryKey;
+    }
+
     public String getAutoIncrement() {
         return autoIncrement;
     }
@@ -79,8 +97,11 @@ public class Table {
         return result;
     }
 
-    public void setAttributes(List<String> attributes) {
-        this.attributes = attributes;
+    public void addAttribute(String attribute) {
+        if (attribute == null || attribute.isEmpty()) {
+            return;
+        }
+        attributes.add(attribute);
     }
 
     @Override
@@ -107,7 +128,6 @@ public class Table {
             ", columns=" + columns +
             ", indexes=" + indexes +
             ", attributes=" + attributes +
-//            ", createTable='" + createTable + '\'' +
             '}';
     }
 }
