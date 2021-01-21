@@ -212,11 +212,18 @@ public class Database {
 
         executeTask(connection -> {
             Statement statement = connection.createStatement();
+            List<String> ddlList = new ArrayList<>(addTablesDdlMap.size());
             for (String tableName : addTablesDdlMap.keySet()) {
-                statement.addBatch(addTablesDdlMap.get(tableName));
+                String ddl = addTablesDdlMap.get(tableName);
+                statement.addBatch(ddl);
+                ddlList.add(ddl);
                 Log.COMMON.info("TABLE `{}`.`{}` IS CREATED.", dbName, tableName);
             }
-            statement.executeBatch();
+            try {
+                statement.executeBatch();
+            } catch (BatchUpdateException e) {
+                handleBatchUpdateException(connection, e, ddlList);
+            }
             statement.close();
         });
     }
@@ -240,11 +247,18 @@ public class Database {
 
         executeTask(connection -> {
             Statement statement = connection.createStatement();
+            List<String> ddlList = new ArrayList<>(deleteTablesDdlMap.size());
             for (String tableName : deleteTablesDdlMap.keySet()) {
-                statement.addBatch(deleteTablesDdlMap.get(tableName));
+                String ddl = deleteTablesDdlMap.get(tableName);
+                statement.addBatch(ddl);
+                ddlList.add(ddl);
                 Log.COMMON.info("TABLE `{}`.`{}` IS DELETED.", dbName, tableName);
             }
-            statement.executeBatch();
+            try {
+                statement.executeBatch();
+            } catch (BatchUpdateException e) {
+                handleBatchUpdateException(connection, e, ddlList);
+            }
             statement.close();
         });
     }
@@ -286,28 +300,21 @@ public class Database {
         }
 
         executeTask(connection -> {
+            Statement statement = connection.createStatement();
             for (String tableName : syncSchemaDdlMap.keySet()) {
-                List<String> ddl = syncSchemaDdlMap.get(tableName);
+                List<String> ddlList = syncSchemaDdlMap.get(tableName);
                 try {
-                    Statement statement = connection.createStatement();
-                    for (String s : ddl) {
+                    for (String s : ddlList) {
                         statement.addBatch(s);
                     }
                     statement.executeBatch();
-                    statement.close();
+                    statement.clearBatch();
                     Log.COMMON.info("TABLE `{}`.`{}` IS SYNCHRONIZED.", dbName, tableName);
                 } catch (BatchUpdateException e) {
-                    String table = String.format("`%s`.`%s`", dbName, tableName);
-                    int[] updateCounts = e.getUpdateCounts();
-                    for (int i = 0; i < updateCounts.length; i++) {
-                        if (updateCounts[i] == Statement.EXECUTE_FAILED) {
-                            Log.COMMON.error("{} Execute Failed: {}.", table, ddl.get(i));
-                        } else {
-                            Log.COMMON.error("{} Execute Succeed: {}.", table, ddl.get(i));
-                        }
-                    }
+                    handleBatchUpdateException(connection, e, ddlList);
                 }
             }
+            statement.close();
         });
     }
 
@@ -365,15 +372,17 @@ public class Database {
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
             connection.setAutoCommit(false);
+            connection.prepareStatement("SET FOREIGN_KEY_CHECKS = 0").execute();
             task.run(connection);
+            connection.prepareStatement("SET FOREIGN_KEY_CHECKS = 1").execute();
             connection.commit();
         } catch (SQLException e) {
-            Log.COMMON.error("", e);
+            Log.COMMON.error("Execute Task Exception", e);
             if (connection != null) {
                 try {
                     connection.rollback();
                 } catch (SQLException ex) {
-                    Log.COMMON.error("", ex);
+                    Log.COMMON.error("Rollback Exception", ex);
                 }
             }
         } finally {
@@ -382,9 +391,30 @@ public class Database {
                     connection.close();
                 }
             } catch (SQLException e) {
-                Log.COMMON.error("", e);
+                Log.COMMON.error("Connection Close Exception", e);
             }
         }
+    }
+
+    /**
+     * 处理 Statement 批量执行异常
+     *
+     * @param connection JDBC 连接
+     * @param e          Statement 批量执行异常
+     * @param ddlList    Statement 批量执行的 DDL 语句
+     * @throws SQLException JDBC 执行异常
+     */
+    private void handleBatchUpdateException(Connection connection, BatchUpdateException e, List<String> ddlList)
+        throws SQLException {
+        int[] updateCounts = e.getUpdateCounts();
+        for (int i = 0; i < updateCounts.length; i++) {
+            if (updateCounts[i] == Statement.EXECUTE_FAILED) {
+                Log.COMMON.error("`{}` Execute Failed: {}.", dbName, ddlList.get(i));
+            } else {
+                Log.COMMON.error("`{}` Execute Succeed: {}.", dbName, ddlList.get(i));
+            }
+        }
+        connection.rollback();
     }
 
     /**
