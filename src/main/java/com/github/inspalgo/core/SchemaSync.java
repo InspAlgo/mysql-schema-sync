@@ -69,7 +69,7 @@ public class SchemaSync {
         if (sourceTablePriKey != null && targetTablePriKey == null) {
             result.add(String.format("ALTER TABLE `%s` ADD %s", tableName, sourceTablePriKey));
         } else if (sourceTablePriKey == null && targetTablePriKey != null) {
-            result.add("ALTER TABLE `%s` DROP PRIMARY KEY");
+            result.add(String.format("ALTER TABLE `%s` DROP PRIMARY KEY", tableName));
         } else if (sourceTablePriKey != null && !sourceTablePriKey.equals(targetTablePriKey)) {
             result.add(String.format("ALTER TABLE `%s` DROP PRIMARY KEY, ADD %s", tableName, sourceTablePriKey));
         }
