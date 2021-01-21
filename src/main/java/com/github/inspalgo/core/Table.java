@@ -14,7 +14,7 @@ public class Table {
     private final List<String> indexes = new ArrayList<>();
     private String primaryKey = null;
     private String autoIncrement = null;
-    private List<String> attributes = new ArrayList<>();
+    private final List<String> attributes = new ArrayList<>();
     private String createTable;
 
     public String getName() {
