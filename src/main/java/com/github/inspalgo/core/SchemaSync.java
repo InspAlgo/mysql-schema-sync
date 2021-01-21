@@ -78,8 +78,8 @@ public class SchemaSync {
         List<String> deleteIndexes = targetTable.getIndexes();
         deleteIndexes.removeAll(sourceTable.getIndexes());
         for (String index : deleteIndexes) {
-            result.add(String.format("ALTER TABLE `%s` DROP %s",
-                tableName, index.substring(0, index.indexOf('(')).trim()));
+            result.add(String.format("ALTER TABLE `%s` DROP KEY %s",
+                tableName, index.substring(index.indexOf('`'), index.indexOf('(')).trim()));
         }
         List<String> addIndexes = sourceTable.getIndexes();
         addIndexes.removeAll(targetTable.getIndexes());
