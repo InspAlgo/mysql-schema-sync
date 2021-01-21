@@ -94,9 +94,9 @@ public class Dispatcher {
                 targetDb.generateSyncSchemaDdlList(sourceDb, modifyTableNames);
 
                 if (preview) {
-                    Log.PREVIEW.info("=== DDL Preview Start ===");
+                    Log.PREVIEW.info("=== `{}` DDL Preview Start ===", targetDb.getDbName());
                     targetDb.displayPreview();
-                    Log.PREVIEW.info("=== DDL Preview End ===");
+                    Log.PREVIEW.info("=== `{}` DDL Preview End ===", targetDb.getDbName());
                 } else {
                     targetDb.deleteTables();
                     targetDb.addTables();

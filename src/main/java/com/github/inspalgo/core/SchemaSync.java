@@ -63,6 +63,17 @@ public class SchemaSync {
             position = String.format("AFTER `%s`", sourceColumnNames.get(i));
         }
 
+        // 主键同步
+        String sourceTablePriKey = sourceTable.getPrimaryKey();
+        String targetTablePriKey = targetTable.getPrimaryKey();
+        if (sourceTablePriKey != null && targetTablePriKey == null) {
+            result.add(String.format("ALTER TABLE `%s` ADD %s", tableName, sourceTablePriKey));
+        } else if (sourceTablePriKey == null && targetTablePriKey != null) {
+            result.add("ALTER TABLE `%s` DROP PRIMARY KEY");
+        } else if (sourceTablePriKey != null && !sourceTablePriKey.equals(targetTablePriKey)) {
+            result.add(String.format("ALTER TABLE `%s` DROP PRIMARY KEY, ADD %s", tableName, sourceTablePriKey));
+        }
+
         // 索引同步
         List<String> deleteIndexes = targetTable.getIndexes();
         deleteIndexes.removeAll(sourceTable.getIndexes());

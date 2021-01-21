@@ -72,8 +72,17 @@ public class ConnectMetaData {
             '}';
     }
 
+    /**
+     * 数据库类型
+     */
     public enum Type {
+        /**
+         * 无类型，用于填充默认值
+         */
         NONE,
+        /**
+         * MySQL 数据库
+         */
         MYSQL,
     }
 }

@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -120,7 +119,7 @@ public class Database {
 
     public void init() {
         try (Connection connection = DriverManager.getConnection(getJdbcUrl(), username, password)) {
-            String queryTables = "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?";
+            String queryTables = "SELECT TABLE_NAME,ROW_FORMAT FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?";
             PreparedStatement preparedStatementTable = connection.prepareStatement(queryTables);
             preparedStatementTable.setString(1, dbName);
             ResultSet resultSetTable = preparedStatementTable.executeQuery();
@@ -130,6 +129,7 @@ public class Database {
 
                 String tableName = resultSetTable.getString("TABLE_NAME");
                 table.setName(tableName);
+                String rowFormat = resultSetTable.getString("ROW_FORMAT");
 
                 String queryCreateTable = "SHOW CREATE TABLE " + tableName;
                 PreparedStatement preparedStatementCreateTable = connection.prepareStatement(queryCreateTable);
@@ -166,19 +166,25 @@ public class Database {
                     columns.get(i - 1).setDdl(ddl);
                 }
                 for (int i = columns.size() + 1, end = createTableLines.length - 1; i < end; i++) {
-                    table.addIndex(parseIndex(createTableLines[i].trim()));
+                    String index = parseIndex(createTableLines[i].trim());
+                    if (index.startsWith("PRIMARY KEY")) {
+                        table.setPrimaryKey(index);
+                        continue;
+                    }
+                    table.addIndex(index);
                 }
 
                 List<String> attributes = parseAttributes(createTableLines[createTableLines.length - 1]);
-                for (int i = 0, size = attributes.size(); i < size; i++) {
-                    if (attributes.get(i).startsWith("AUTO_INCREMENT")) {
-                        table.setAutoIncrement(attributes.get(i));
-                        attributes.remove(i);
-                        // 因为调用了 remove 所以 size 要自减，否则越界异常
-                        size--;
+                for (String attribute : attributes) {
+                    if (attribute.startsWith("AUTO_INCREMENT")) {
+                        table.setAutoIncrement(attribute);
+                    } else {
+                        table.addAttribute(attribute);
                     }
                 }
-                table.setAttributes(attributes);
+                if (rowFormat != null && !rowFormat.isEmpty()) {
+                    table.addAttribute(String.format("ROW_FORMAT=%s", rowFormat));
+                }
 
                 tableMap.put(tableName, table);
             }
@@ -195,52 +201,24 @@ public class Database {
             addTablesDdlMap.clear();
         }
         addTablesDdlMap = new HashMap<>(tables.size());
-        for (Table table : tables) {
-            String createTable = table.getCreateTable();
-            if (table.getAutoIncrement() != null) {
-                // 如果存在自增，则需要删除掉表属性中的自增属性，防止带入自增值
-                createTable = createTable.replaceAll(table.getAutoIncrement(), "");
-            }
-            addTablesDdlMap.put(table.getName(), createTable);
-        }
+        tables.forEach(table -> addTablesDdlMap.put(table.getName(), table.getNewCreateTable()));
     }
 
     public void addTables() {
         if (addTablesDdlMap == null || addTablesDdlMap.size() == 0) {
-            Log.COMMON.error("Not Add Tables DDL.");
+            Log.COMMON.error("`{}` Not Add Tables DDL.", dbName);
             return;
         }
 
-        Connection connection = null;
-        try {
-            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
-            connection.setAutoCommit(false);
+        executeTask(connection -> {
             Statement statement = connection.createStatement();
             for (String tableName : addTablesDdlMap.keySet()) {
                 statement.addBatch(addTablesDdlMap.get(tableName));
-                Log.COMMON.info("SCHEMA: [{}] IS CREATED.", tableName);
+                Log.COMMON.info("TABLE `{}`.`{}` IS CREATED.", dbName, tableName);
             }
             statement.executeBatch();
             statement.close();
-            connection.commit();
-        } catch (SQLException e) {
-            Log.COMMON.error("", e);
-            if (connection != null) {
-                try {
-                    connection.rollback();
-                } catch (SQLException ex) {
-                    Log.COMMON.error("", e);
-                }
-            }
-        } finally {
-            try {
-                if (connection != null) {
-                    connection.close();
-                }
-            } catch (SQLException e) {
-                Log.COMMON.error("", e);
-            }
-        }
+        });
     }
 
     public void generateDeleteTablesDdlList(final List<String> tableNames) {
@@ -251,47 +229,24 @@ public class Database {
             deleteTablesDdlMap.clear();
         }
         deleteTablesDdlMap = new HashMap<>(tableNames.size());
-        for (String tableName : tableNames) {
-            deleteTablesDdlMap.put(tableName, "DROP TABLE " + tableName);
-        }
+        tableNames.forEach(tblName -> deleteTablesDdlMap.put(tblName, String.format("DROP TABLE `%s`", tblName)));
     }
 
     public void deleteTables() {
         if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
-            Log.COMMON.error("Not Delete Tables DDL.");
+            Log.COMMON.error("`{}` Not Delete Tables DDL.", dbName);
             return;
         }
 
-        Connection connection = null;
-        try {
-            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
-            connection.setAutoCommit(false);
+        executeTask(connection -> {
             Statement statement = connection.createStatement();
             for (String tableName : deleteTablesDdlMap.keySet()) {
                 statement.addBatch(deleteTablesDdlMap.get(tableName));
-                Log.COMMON.info("SCHEMA [{}] IS DELETED.", tableName);
+                Log.COMMON.info("TABLE `{}`.`{}` IS DELETED.", dbName, tableName);
             }
             statement.executeBatch();
             statement.close();
-            connection.commit();
-        } catch (SQLException e) {
-            Log.COMMON.error("", e);
-            if (connection != null) {
-                try {
-                    connection.rollback();
-                } catch (SQLException ex) {
-                    Log.COMMON.error("", ex);
-                }
-            }
-        } finally {
-            try {
-                if (connection != null) {
-                    connection.close();
-                }
-            } catch (SQLException e) {
-                Log.COMMON.error("", e);
-            }
-        }
+        });
     }
 
     public void generateSyncSchemaDdlList(final Database sourceDb, final List<String> tableNames) {
@@ -325,15 +280,12 @@ public class Database {
     }
 
     public void syncSchema() {
-        if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
-            Log.COMMON.error("Not Sync Schema DDL.");
+        if (syncSchemaDdlMap == null || syncSchemaDdlMap.size() == 0) {
+            Log.COMMON.error("`{}` Not Sync Schema DDL.", dbName);
             return;
         }
 
-        Connection connection = null;
-        try {
-            connection = DriverManager.getConnection(getJdbcUrl(), username, password);
-            connection.setAutoCommit(false);
+        executeTask(connection -> {
             for (String tableName : syncSchemaDdlMap.keySet()) {
                 List<String> ddl = syncSchemaDdlMap.get(tableName);
                 try {
@@ -343,47 +295,40 @@ public class Database {
                     }
                     statement.executeBatch();
                     statement.close();
-                    Log.COMMON.info("SCHEMA [{}] IS SYNC.", tableName);
+                    Log.COMMON.info("TABLE `{}`.`{}` IS SYNCHRONIZED.", dbName, tableName);
                 } catch (BatchUpdateException e) {
+                    String table = String.format("`%s`.`%s`", dbName, tableName);
                     int[] updateCounts = e.getUpdateCounts();
-                    Log.COMMON.error(Arrays.toString(updateCounts));
-                    Log.COMMON.error(ddl.toString());
-                } catch (SQLException e) {
-                    Log.COMMON.error("", e);
+                    for (int i = 0; i < updateCounts.length; i++) {
+                        if (updateCounts[i] == Statement.EXECUTE_FAILED) {
+                            Log.COMMON.error("{} Execute Failed: {}.", table, ddl.get(i));
+                        } else {
+                            Log.COMMON.error("{} Execute Succeed: {}.", table, ddl.get(i));
+                        }
+                    }
                 }
             }
-            connection.commit();
-        } catch (SQLException e) {
-            if (connection != null) {
-                try {
-                    connection.rollback();
-                } catch (SQLException ex) {
-                    Log.COMMON.error("", ex);
-                }
-            }
-        } finally {
-            try {
-                if (connection != null) {
-                    connection.close();
-                }
-            } catch (SQLException e) {
-                Log.COMMON.error("", e);
-            }
-        }
+        });
     }
 
+    /**
+     * 显示预览
+     */
     public void displayPreview() {
-        for (String tableName : deleteTablesDdlMap.keySet()) {
-            Log.PREVIEW.info(deleteTablesDdlMap.get(tableName));
+        if (deleteTablesDdlMap != null) {
+            deleteTablesDdlMap.forEach((k, v) -> Log.PREVIEW.info(v));
         }
-        for (String tableName : addTablesDdlMap.keySet()) {
-            Log.PREVIEW.info(addTablesDdlMap.get(tableName));
+        if (addTablesDdlMap != null) {
+            addTablesDdlMap.forEach((k, v) -> Log.PREVIEW.info(v));
         }
-        for (String tableName : syncSchemaDdlMap.keySet()) {
-            Log.PREVIEW.info(syncSchemaDdlMap.get(tableName).toString());
+        if (syncSchemaDdlMap != null) {
+            syncSchemaDdlMap.forEach((k, v) -> Log.PREVIEW.info(v.toString()));
         }
     }
 
+    /**
+     * 销毁属性
+     */
     public void destroyAllAttributes() {
         try {
             dbName = null;
@@ -399,11 +344,28 @@ public class Database {
         }
     }
 
-    private void executeCallback(Connection connection, Runnable task) {
+    @FunctionalInterface
+    private interface Task {
+        /**
+         * 数据库任务执行
+         *
+         * @param connection JDBC 的 {@link Connection} 实例
+         * @throws SQLException JDBC 执行时抛出的 SQL 异常
+         */
+        void run(Connection connection) throws SQLException;
+    }
+
+    /**
+     * 数据库任务执行，将事物提交与回滚等公共操作提取出来，只需传入要执行的 Task 即可
+     *
+     * @param task 要执行的数据库任务
+     */
+    private void executeTask(Task task) {
+        Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
             connection.setAutoCommit(false);
-            task.run();
+            task.run(connection);
             connection.commit();
         } catch (SQLException e) {
             Log.COMMON.error("", e);
@@ -425,6 +387,12 @@ public class Database {
         }
     }
 
+    /**
+     * 主键、索引解析
+     *
+     * @param originDdl 主键、索引，CREATE TABLE 的字段属性到最后一行的中间部分
+     * @return 主键、索引
+     */
     private static String parseIndex(String originDdl) {
         if (originDdl.charAt(originDdl.length() - 1) == ',') {
             originDdl = originDdl.substring(0, originDdl.length() - 1);
@@ -439,6 +407,12 @@ public class Database {
         return originDdl;
     }
 
+    /**
+     * 表属性解析
+     *
+     * @param ddl 表属性，CREATE TABLE 的最后一行
+     * @return 表属性列表
+     */
     private static List<String> parseAttributes(String ddl) {
         ArrayList<String> result = new ArrayList<>();
         StringBuilder sb = new StringBuilder(ddl.length());

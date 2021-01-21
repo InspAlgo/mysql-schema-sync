@@ -35,7 +35,8 @@ public class Arguments implements Runnable {
             if (sourceConnectMetaData != null) {
                 Log.COMMON.info(sourceConnectMetaData.toString());
             } else {
-                Log.COMMON.error(source);
+                Log.COMMON.error("源数据库资源标识格式错误: [{}]", source);
+                System.exit(-1);
             }
         }
 
@@ -47,7 +48,8 @@ public class Arguments implements Runnable {
                 if (targetConnectMetaData != null) {
                     targetConnectMetaDataList.add(targetConnectMetaData);
                 } else {
-                    Log.COMMON.error("Target argument format is error: {}", t);
+                    Log.COMMON.error("目标数据库资源标识格式错误: [{}]", t);
+                    System.exit(-1);
                 }
             }
 
@@ -62,6 +64,12 @@ public class Arguments implements Runnable {
         }
     }
 
+    /**
+     * 解析 mysql#username:password@host:port/database_name 形式的标识
+     *
+     * @param uri 在线密码式 MySQL 标识
+     * @return 连接元数据
+     */
     private ConnectMetaData parseUri(String uri) {
         if (uri == null || uri.isEmpty()) {
             return null;
