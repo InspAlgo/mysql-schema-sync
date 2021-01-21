@@ -6,7 +6,7 @@
 
     <groupId>com.github.inspalgo</groupId>
     <artifactId>mysql-schema-sync</artifactId>
-    <version>0.2</version>
+    <version>0.2.1</version>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
