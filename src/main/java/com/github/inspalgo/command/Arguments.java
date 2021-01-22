@@ -19,10 +19,10 @@ import static picocli.CommandLine.Option;
  */
 @Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.3")
 public class Arguments implements Runnable {
-    @Option(names = {"-s", "--source"}, required = true, description = "Source database.\nE.g. 'mysql#username:password@host:port/database_name' .")
+    @Option(names = {"-s", "--source"}, required = true, description = "指定源：1.在线方式 -s mysql#username:password@host:port/database_name, 2.SQL文件方式  -s sql_filepath")
     private String source;
 
-    @Option(names = {"-t", "--target"}, required = true, description = "Target Database.\nE.g. 'mysql#username:password@host:port/database_name' .")
+    @Option(names = {"-t", "--target"}, required = true, description = "指定目标：目前只有在线方式 -t mysql#username:password@host:port/database_name")
     private List<String> targets;
 
     @Option(names = {"-p", "--preview"}, description = "Executing Process Preview")
