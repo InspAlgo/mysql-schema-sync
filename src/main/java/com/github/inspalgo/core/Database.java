@@ -3,6 +3,11 @@ package com.github.inspalgo.core;
 import com.github.inspalgo.util.Log;
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -28,6 +33,7 @@ public class Database {
     private String host;
     private String port;
     private String jdbcUrl;
+    private Path sqlFilePath;
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
@@ -42,6 +48,20 @@ public class Database {
         host = connectMetaData.getHost();
         port = connectMetaData.getPort();
         return this;
+    }
+
+    public boolean checkConnectMetaData() {
+        String[] checks = new String[]{
+            dbName, username, password, host, port
+        };
+
+        for (String check : checks) {
+            if (check == null || check.isEmpty()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public String getDbName() {
@@ -117,7 +137,26 @@ public class Database {
         return jdbcUrl;
     }
 
+    public Path getSqlFilePath() {
+        return sqlFilePath;
+    }
+
+    public Database setSqlFilePath(Path sqlFilePath) {
+        this.sqlFilePath = sqlFilePath;
+        return this;
+    }
+
     public void init() {
+        if (checkConnectMetaData()) {
+            initByOnline();
+        } else if (sqlFilePath != null) {
+            initBySqlFile();
+        } else {
+            throw new RuntimeException("数据库初始化异常");
+        }
+    }
+
+    public void initByOnline() {
         try (Connection connection = DriverManager.getConnection(getJdbcUrl(), username, password)) {
             String queryTables = "SELECT TABLE_NAME,ROW_FORMAT FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?";
             PreparedStatement preparedStatementTable = connection.prepareStatement(queryTables);
@@ -130,12 +169,13 @@ public class Database {
                 String tableName = resultSetTable.getString("TABLE_NAME");
                 table.setName(tableName);
                 String rowFormat = resultSetTable.getString("ROW_FORMAT");
+                String createTable = "";
 
                 String queryCreateTable = "SHOW CREATE TABLE " + tableName;
                 PreparedStatement preparedStatementCreateTable = connection.prepareStatement(queryCreateTable);
                 ResultSet resultSetCreateTable = preparedStatementCreateTable.executeQuery();
                 while (resultSetCreateTable.next()) {
-                    table.setCreateTable(resultSetCreateTable.getString(2));
+                    createTable = resultSetCreateTable.getString(2);
                 }
                 preparedStatementCreateTable.close();
                 resultSetCreateTable.close();
@@ -156,14 +196,10 @@ public class Database {
                 preparedStatementColumn.close();
                 resultSetColumn.close();
 
-                String[] createTableLines = table.getCreateTable().split("\n");
+                String[] createTableLines = createTable.split("\n");
                 List<Column> columns = table.getColumns();
                 for (int i = 1, columnSize = columns.size(); i <= columnSize; i++) {
-                    String ddl = createTableLines[i].trim();
-                    if (ddl.charAt(ddl.length() - 1) == ',') {
-                        ddl = ddl.substring(0, ddl.length() - 1);
-                    }
-                    columns.get(i - 1).setDdl(ddl);
+                    columns.get(i - 1).setDdl(removeLastComma(createTableLines[i].trim()));
                 }
                 for (int i = columns.size() + 1, end = createTableLines.length - 1; i < end; i++) {
                     String index = parseIndex(createTableLines[i].trim());
@@ -180,19 +216,70 @@ public class Database {
                         table.setAutoIncrement(attribute);
                     } else if (attribute.startsWith("ROW_FORMAT")) {
                         // 避免重复插入该属性
-                        rowFormat = attribute;
+                        rowFormat = attribute.substring(attribute.indexOf('=') + 1).trim();
                     } else {
                         table.addAttribute(attribute);
                     }
                 }
                 if (rowFormat != null && !rowFormat.isEmpty()) {
-                    table.addAttribute(String.format("ROW_FORMAT=%s", rowFormat));
+                    table.addAttribute(String.format("ROW_FORMAT=%s", rowFormat.toUpperCase()));
                 }
 
                 tableMap.put(tableName, table);
             }
         } catch (SQLException e) {
             Log.COMMON.error("", e);
+        }
+    }
+
+    private static String removeLastComma(String ddl) {
+        if (ddl.charAt(ddl.length() - 1) == ',') {
+            ddl = ddl.substring(0, ddl.length() - 1);
+        }
+        return ddl;
+    }
+
+    public void initBySqlFile() {
+        // 使用缓冲流 I/O 读取文件
+        try (BufferedReader reader = Files.newBufferedReader(sqlFilePath, StandardCharsets.UTF_8)) {
+            String line;
+            Table table = null;
+            String tableName = null;
+            int columnOrdinalPosition = 1;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("CREATE TABLE") && table == null) {
+                    tableName = line.substring(line.indexOf('`') + 1, line.lastIndexOf('`'));
+                    table = new Table();
+                    table.setName(tableName);
+                } else if (line.startsWith("`") && table != null) {
+                    Column column = new Column()
+                        .setColumnName(line.substring(1, line.indexOf('`', 1)))
+                        .setOrdinalPosition(columnOrdinalPosition++)
+                        .setDdl(removeLastComma(line));
+                    table.addColumn(column);
+                } else if (line.startsWith("PRIMARY KEY") && table != null) {
+                    table.setPrimaryKey(parseIndex(line));
+                } else if (line.startsWith(")") && table != null) {
+                    List<String> attributes = parseAttributes(line);
+                    for (String attribute : attributes) {
+                        if (attribute.startsWith("AUTO_INCREMENT")) {
+                            table.setAutoIncrement(attribute);
+                        } else {
+                            table.addAttribute(attribute);
+                        }
+                    }
+
+                    tableMap.put(tableName, table);
+                    table = null;
+                    tableName = null;
+                    columnOrdinalPosition = 0;
+                } else if (line.contains("KEY") && table != null) {
+                    table.addIndex(parseIndex(line));
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -204,12 +291,12 @@ public class Database {
             addTablesDdlMap.clear();
         }
         addTablesDdlMap = new HashMap<>(tables.size());
-        tables.forEach(table -> addTablesDdlMap.put(table.getName(), table.getNewCreateTable()));
+        tables.forEach(table -> addTablesDdlMap.put(table.getName(), table.getCreateTable()));
     }
 
     public void addTables() {
         if (addTablesDdlMap == null || addTablesDdlMap.size() == 0) {
-            Log.COMMON.error("`{}` Not Add Tables DDL.", dbName);
+            Log.COMMON.info("`{}` Not Add Tables DDL.", dbName);
             return;
         }
 
@@ -244,7 +331,7 @@ public class Database {
 
     public void deleteTables() {
         if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
-            Log.COMMON.error("`{}` Not Delete Tables DDL.", dbName);
+            Log.COMMON.info("`{}` Not Delete Tables DDL.", dbName);
             return;
         }
 
@@ -298,7 +385,7 @@ public class Database {
 
     public void syncSchema() {
         if (syncSchemaDdlMap == null || syncSchemaDdlMap.size() == 0) {
-            Log.COMMON.error("`{}` Not Sync Schema DDL.", dbName);
+            Log.COMMON.info("`{}` Not Sync Schema DDL.", dbName);
             return;
         }
 
@@ -427,9 +514,7 @@ public class Database {
      * @return 主键、索引
      */
     private static String parseIndex(String originDdl) {
-        if (originDdl.charAt(originDdl.length() - 1) == ',') {
-            originDdl = originDdl.substring(0, originDdl.length() - 1);
-        }
+        originDdl = removeLastComma(originDdl);
 
         // 因为 BTREE 是默认索引类型，所以比对时先将 USING BTREE 忽略掉
         int btreeIndex = originDdl.lastIndexOf("USING BTREE");

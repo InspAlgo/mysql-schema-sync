@@ -6,6 +6,7 @@ import com.github.inspalgo.core.Table;
 import com.github.inspalgo.util.Log;
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -26,6 +27,25 @@ public class Dispatcher {
         List<Database> targetDbs = new ArrayList<>(targets.size());
 
         ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher", targets.size() + 1);
+
+        initDb(executor, sourceDb, targets, targetDbs);
+
+        syncTargets(executor, sourceDb, targetDbs, preview);
+
+        executor.shutdownNow();
+        sourceDb.destroyAllAttributes();
+    }
+
+    public static void outlineSchemaSync(Path source, List<ConnectMetaData> targets, boolean preview) throws InterruptedException {
+        if (source == null || targets == null || targets.isEmpty()) {
+            throw new IllegalArgumentException("参数为空");
+        }
+
+        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher", targets.size() + 1);
+        Database sourceDb = new Database()
+            .setDbName(source.getFileName().toString())
+            .setSqlFilePath(source);
+        List<Database> targetDbs = new ArrayList<>(targets.size());
 
         initDb(executor, sourceDb, targets, targetDbs);
 
