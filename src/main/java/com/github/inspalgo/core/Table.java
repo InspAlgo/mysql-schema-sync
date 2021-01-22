@@ -15,7 +15,6 @@ public class Table {
     private String primaryKey = null;
     private String autoIncrement = null;
     private final List<String> attributes = new ArrayList<>();
-    private String createTable;
 
     public String getName() {
         return name;
@@ -34,20 +33,22 @@ public class Table {
     }
 
     public String getCreateTable() {
-        return createTable;
-    }
-
-    public String getNewCreateTable() {
-        // 最后一个右括号，即 CREATE TABLE `` () 语句的 )
-        int lastCloseBracket = createTable.lastIndexOf(')');
-        StringBuilder sb = new StringBuilder(createTable);
-        sb.delete(lastCloseBracket + 1, createTable.length()).append(" ");
-        sb.append(String.join(" ", attributes));
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("CREATE TABLE `%s` (", name));
+        for (int i = 0, size = columns.size(); i < size; i++) {
+            sb.append(" ").append(columns.get(i).getDdl());
+            if (i < size - 1) {
+                sb.append(",");
+            }
+        }
+        if (primaryKey != null) {
+            sb.append(", ").append(primaryKey);
+        }
+        for (String index : indexes) {
+            sb.append(", ").append(index);
+        }
+        sb.append(" ) ").append(String.join(" ", attributes)).append(";");
         return sb.toString();
-    }
-
-    public void setCreateTable(String createTable) {
-        this.createTable = createTable;
     }
 
     public ArrayList<String> getAllColumnNames() {
