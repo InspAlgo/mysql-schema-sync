@@ -178,6 +178,9 @@ public class Database {
                 for (String attribute : attributes) {
                     if (attribute.startsWith("AUTO_INCREMENT")) {
                         table.setAutoIncrement(attribute);
+                    } else if (attribute.startsWith("ROW_FORMAT")) {
+                        // 避免重复插入该属性
+                        rowFormat = attribute;
                     } else {
                         table.addAttribute(attribute);
                     }
