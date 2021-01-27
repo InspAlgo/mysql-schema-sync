@@ -17,7 +17,7 @@ import static picocli.CommandLine.Option;
  * @author InspAlgo
  * @date 2021/1/13 15:03 UTC+08:00
  */
-@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.3")
+@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.3.1")
 public class Arguments implements Runnable {
     @Option(names = {"-s", "--source"}, required = true, description = "指定源：1.在线方式 -s mysql#username:password@host:port/database_name, 2.SQL文件方式  -s sql_filepath")
     private String source;
@@ -25,7 +25,7 @@ public class Arguments implements Runnable {
     @Option(names = {"-t", "--target"}, required = true, description = "指定目标：目前只有在线方式 -t mysql#username:password@host:port/database_name")
     private List<String> targets;
 
-    @Option(names = {"-p", "--preview"}, description = "Executing Process Preview")
+    @Option(names = {"-p", "--preview"}, description = "仅预览执行")
     private boolean preview = false;
 
     @Override

@@ -232,15 +232,7 @@ public class Database {
         }
     }
 
-    private static String removeLastComma(String ddl) {
-        if (ddl.charAt(ddl.length() - 1) == ',') {
-            ddl = ddl.substring(0, ddl.length() - 1);
-        }
-        return ddl;
-    }
-
     public void initBySqlFile() {
-        // 使用缓冲流 I/O 读取文件
         try (BufferedReader reader = Files.newBufferedReader(sqlFilePath, StandardCharsets.UTF_8)) {
             String line;
             Table table = null;
@@ -248,23 +240,28 @@ public class Database {
             int columnOrdinalPosition = 1;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
-                if (line.startsWith("CREATE TABLE") && table == null) {
-                    tableName = line.substring(line.indexOf('`') + 1, line.lastIndexOf('`'));
+                if (table == null && line.startsWith("CREATE TABLE")) {
+                    tableName = line.substring(
+                        line.contains("`.`") ? line.indexOf("`.`") + 3 : line.indexOf('`') + 1,
+                        line.lastIndexOf('`')
+                    );
                     table = new Table();
                     table.setName(tableName);
-                } else if (line.startsWith("`") && table != null) {
+                } else if (table != null && line.startsWith("`")) {
                     Column column = new Column()
                         .setColumnName(line.substring(1, line.indexOf('`', 1)))
                         .setOrdinalPosition(columnOrdinalPosition++)
                         .setDdl(removeLastComma(line));
                     table.addColumn(column);
-                } else if (line.startsWith("PRIMARY KEY") && table != null) {
+                } else if (table != null && line.startsWith("PRIMARY KEY")) {
                     table.setPrimaryKey(parseIndex(line));
-                } else if (line.startsWith(")") && table != null) {
+                } else if (table != null && line.startsWith(")")) {
                     List<String> attributes = parseAttributes(line);
                     for (String attribute : attributes) {
                         if (attribute.startsWith("AUTO_INCREMENT")) {
                             table.setAutoIncrement(attribute);
+                        } else if (attribute.startsWith("ROW_FORMAT")) {
+                            table.addAttribute(attribute.toUpperCase());
                         } else {
                             table.addAttribute(attribute);
                         }
@@ -273,8 +270,8 @@ public class Database {
                     tableMap.put(tableName, table);
                     table = null;
                     tableName = null;
-                    columnOrdinalPosition = 0;
-                } else if (line.contains("KEY") && table != null) {
+                    columnOrdinalPosition = 1;
+                } else if (table != null && (line.contains("KEY") || line.contains("INDEX"))) {
                     table.addIndex(parseIndex(line));
                 }
             }
@@ -505,6 +502,13 @@ public class Database {
             }
         }
         connection.rollback();
+    }
+
+    private static String removeLastComma(String ddl) {
+        if (ddl.charAt(ddl.length() - 1) == ',') {
+            ddl = ddl.substring(0, ddl.length() - 1);
+        }
+        return ddl;
     }
 
     /**
