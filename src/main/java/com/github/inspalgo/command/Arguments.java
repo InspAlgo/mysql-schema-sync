@@ -4,7 +4,9 @@ import com.github.inspalgo.core.ConnectMetaData;
 import com.github.inspalgo.logic.Dispatcher;
 import com.github.inspalgo.util.Log;
 
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -17,7 +19,7 @@ import static picocli.CommandLine.Option;
  * @author InspAlgo
  * @date 2021/1/13 15:03 UTC+08:00
  */
-@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.3.1")
+@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.4")
 public class Arguments implements Runnable {
     @Option(names = {"-s", "--source"}, required = true, description = "指定源：1.在线方式 -s mysql#username:password@host:port/database_name, 2.SQL文件方式  -s sql_filepath")
     private String source;
@@ -28,11 +30,15 @@ public class Arguments implements Runnable {
     @Option(names = {"-p", "--preview"}, description = "仅预览执行")
     private boolean preview = false;
 
+    @Option(names = {"-o", "--output"}, description = "输出执行的差异DDL到指定文件中，-o filepath")
+    private List<String> outputs;
+
     @Override
     public void run() {
         ConnectMetaData sourceConnectMetaData = null;
         Path sourceFilepath = null;
         List<ConnectMetaData> targetConnectMetaDataList = null;
+        List<Path> outputFilePaths = null;
 
         SourceType sourceType = SourceType.NONE;
         if (source != null) {
@@ -63,13 +69,37 @@ public class Arguments implements Runnable {
             }
         }
 
+        if (outputs != null && outputs.size() > 0) {
+            if (targets != null && targets.size() != outputs.size()) {
+                Log.COMMON.error("输出DDL的文件数与目标数据库数不匹配");
+                System.exit(-1);
+            }
+            outputFilePaths = new ArrayList<>(outputs.size());
+            for (String filepath : outputs) {
+                try {
+                    Path path = Paths.get(filepath);
+                    if (!Files.exists(path)) {
+                        Files.createFile(path);
+                    }
+                    outputFilePaths.add(path);
+                } catch (InvalidPathException | IOException e) {
+                    Log.COMMON.error("创建DDL输出文件 [{}] 失败\n {}", filepath, e);
+                    System.exit(-1);
+                }
+            }
+        }
+
         try {
+            Dispatcher dispatcher = new Dispatcher()
+                .setPreview(preview)
+                .setTargetConnectMetaDataList(targetConnectMetaDataList)
+                .setOutputFilePathList(outputFilePaths);
             switch (sourceType) {
                 case ONLINE:
-                    Dispatcher.onlineSchemaSync(sourceConnectMetaData, targetConnectMetaDataList, preview);
+                    dispatcher.setSourceConnectMetaData(sourceConnectMetaData).onlineSchemaSync();
                     break;
                 case SQL_FILE:
-                    Dispatcher.outlineSchemaSync(sourceFilepath, targetConnectMetaDataList, preview);
+                    dispatcher.setSourcePath(sourceFilepath).outlineSchemaSync();
                     break;
                 default:
                     Log.COMMON.error("源类型未知");

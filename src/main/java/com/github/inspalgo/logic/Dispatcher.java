@@ -17,39 +17,74 @@ import java.util.concurrent.ThreadPoolExecutor;
  * @date 2021/1/13 14:51 UTC+08:00
  */
 public class Dispatcher {
-    public static void onlineSchemaSync(ConnectMetaData source, List<ConnectMetaData> targets, boolean preview)
+    private boolean preview = false;
+    private ConnectMetaData sourceConnectMetaData = null;
+    private Path sourcePath = null;
+    private List<ConnectMetaData> targetConnectMetaDataList = null;
+    private List<Path> outputFilePathList = null;
+
+    public Dispatcher setPreview(boolean preview) {
+        this.preview = preview;
+        return this;
+    }
+
+    public Dispatcher setSourceConnectMetaData(ConnectMetaData sourceConnectMetaData) {
+        this.sourceConnectMetaData = sourceConnectMetaData;
+        return this;
+    }
+
+    public Dispatcher setSourcePath(Path sourcePath) {
+        this.sourcePath = sourcePath;
+        return this;
+    }
+
+    public Dispatcher setTargetConnectMetaDataList(List<ConnectMetaData> targetConnectMetaDataList) {
+        this.targetConnectMetaDataList = targetConnectMetaDataList;
+        return this;
+    }
+
+    public Dispatcher setOutputFilePathList(List<Path> outputFilePathList) {
+        this.outputFilePathList = outputFilePathList;
+        return this;
+    }
+
+    public void onlineSchemaSync()
         throws InterruptedException {
-        if (source == null || targets == null || targets.isEmpty()) {
+        if (sourceConnectMetaData == null
+            || targetConnectMetaDataList == null || targetConnectMetaDataList.isEmpty()) {
             throw new IllegalArgumentException("参数为空");
         }
 
-        Database sourceDb = new Database().setConnectMetaData(source);
-        List<Database> targetDbs = new ArrayList<>(targets.size());
+        Database sourceDb = new Database().setConnectMetaData(sourceConnectMetaData);
+        List<Database> targetDbs = new ArrayList<>(targetConnectMetaDataList.size());
 
-        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher", targets.size() + 1);
+        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher",
+            targetConnectMetaDataList.size() + 1);
 
-        initDb(executor, sourceDb, targets, targetDbs);
+        initDb(executor, sourceDb, targetConnectMetaDataList, targetDbs);
 
-        syncTargets(executor, sourceDb, targetDbs, preview);
+        syncTargets(executor, sourceDb, targetDbs, preview, outputFilePathList);
 
         executor.shutdownNow();
         sourceDb.destroyAllAttributes();
     }
 
-    public static void outlineSchemaSync(Path source, List<ConnectMetaData> targets, boolean preview) throws InterruptedException {
-        if (source == null || targets == null || targets.isEmpty()) {
+    public void outlineSchemaSync() throws InterruptedException {
+        if (sourcePath == null
+            || targetConnectMetaDataList == null || targetConnectMetaDataList.isEmpty()) {
             throw new IllegalArgumentException("参数为空");
         }
 
-        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher", targets.size() + 1);
+        ThreadPoolExecutor executor = TableThreadPoolExecutor.make("Dispatcher",
+            targetConnectMetaDataList.size() + 1);
         Database sourceDb = new Database()
-            .setDbName(source.getFileName().toString())
-            .setSqlFilePath(source);
-        List<Database> targetDbs = new ArrayList<>(targets.size());
+            .setDbName(sourcePath.getFileName().toString())
+            .setSqlFilePath(sourcePath);
+        List<Database> targetDbs = new ArrayList<>(targetConnectMetaDataList.size());
 
-        initDb(executor, sourceDb, targets, targetDbs);
+        initDb(executor, sourceDb, targetConnectMetaDataList, targetDbs);
 
-        syncTargets(executor, sourceDb, targetDbs, preview);
+        syncTargets(executor, sourceDb, targetDbs, preview, outputFilePathList);
 
         executor.shutdownNow();
         sourceDb.destroyAllAttributes();
@@ -91,10 +126,14 @@ public class Dispatcher {
     }
 
     private static void syncTargets(ThreadPoolExecutor executor, Database sourceDb,
-                                    List<Database> targetDbs, boolean preview) throws InterruptedException {
+                                    List<Database> targetDbs, boolean preview, List<Path> outputFilePathList) throws InterruptedException {
         CountDownLatch countDownLatch = new CountDownLatch(targetDbs.size());
 
-        for (Database targetDb : targetDbs) {
+        for (int i = 0, size = targetDbs.size(); i < size; i++) {
+            final Database targetDb = targetDbs.get(i);
+            if (outputFilePathList != null) {
+                targetDb.setOutputDdlFilepath(outputFilePathList.get(i));
+            }
             executor.execute(() -> {
                 // 要删除的旧表
                 ArrayList<String> deleteTableNames = targetDb.getAllTableNames();
@@ -122,6 +161,8 @@ public class Dispatcher {
                     targetDb.addTables();
                     targetDb.syncSchema();
                 }
+
+                targetDb.outputDdlFile();
 
                 targetDb.destroyAllAttributes();
                 countDownLatch.countDown();

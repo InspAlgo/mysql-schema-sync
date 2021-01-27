@@ -4,10 +4,12 @@ import com.github.inspalgo.util.Log;
 import com.github.inspalgo.util.TableThreadPoolExecutor;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -34,6 +36,7 @@ public class Database {
     private String port;
     private String jdbcUrl;
     private Path sqlFilePath;
+    private Path outputDdlFilepath;
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
@@ -143,6 +146,11 @@ public class Database {
 
     public Database setSqlFilePath(Path sqlFilePath) {
         this.sqlFilePath = sqlFilePath;
+        return this;
+    }
+
+    public Database setOutputDdlFilepath(Path outputDdlFilepath) {
+        this.outputDdlFilepath = outputDdlFilepath;
         return this;
     }
 
@@ -417,6 +425,35 @@ public class Database {
         }
         if (syncSchemaDdlMap != null) {
             syncSchemaDdlMap.forEach((k, v) -> Log.PREVIEW.info(v.toString()));
+        }
+    }
+
+    /**
+     * 输出 DDL 文件
+     */
+    public void outputDdlFile() {
+        if (outputDdlFilepath == null) {
+            return;
+        }
+        try (BufferedWriter writer = Files.newBufferedWriter(outputDdlFilepath,
+            StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING)) {
+            for (String ddl : deleteTablesDdlMap.values()) {
+                writer.write(ddl);
+                writer.write(";\n");
+            }
+            for (String ddl : addTablesDdlMap.values()) {
+                writer.write(ddl);
+                writer.write("\n");
+            }
+            for (List<String> ddlList : syncSchemaDdlMap.values()) {
+                for (String ddl : ddlList) {
+                    writer.write(ddl);
+                    writer.write(";\n");
+                }
+            }
+            writer.flush();
+        } catch (IOException e) {
+            Log.COMMON.error("`{}` 生成DDL输出文件失败.\n{}", dbName, e);
         }
     }
 
