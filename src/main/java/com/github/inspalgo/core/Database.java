@@ -40,9 +40,9 @@ public class Database {
 
     private HashMap<String, Table> tableMap = new HashMap<>(128);
 
-    private HashMap<String, String> addTablesDdlMap;
-    private HashMap<String, String> deleteTablesDdlMap;
-    private ConcurrentHashMap<String, List<String>> syncSchemaDdlMap;
+    private HashMap<String, String> addTablesDdlMap = new HashMap<>(2);
+    private HashMap<String, String> deleteTablesDdlMap = new HashMap<>(2);
+    private ConcurrentHashMap<String, List<String>> syncSchemaDdlMap = new ConcurrentHashMap<>(2);
 
     public Database setConnectMetaData(ConnectMetaData connectMetaData) {
         dbName = connectMetaData.getDatabase();
@@ -132,7 +132,8 @@ public class Database {
 
     public String getJdbcUrl() {
         if (host == null || port == null || dbName == null) {
-            throw new IllegalArgumentException("host,port,dbName may be null!");
+            throw new IllegalArgumentException(String.format(
+                "host[%s], port[%s],dbName[%s] may be null!", host, port, dbName));
         }
         if (jdbcUrl == null || jdbcUrl.isEmpty()) {
             jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useUnicode=true", host, port, dbName);
@@ -145,7 +146,11 @@ public class Database {
     }
 
     public Database setSqlFilePath(Path sqlFilePath) {
+        if (sqlFilePath == null) {
+            throw new IllegalArgumentException("The sqlFilePath is null!");
+        }
         this.sqlFilePath = sqlFilePath;
+        dbName = sqlFilePath.getFileName().toString();
         return this;
     }
 
@@ -492,6 +497,9 @@ public class Database {
      * @param task 要执行的数据库任务
      */
     private void executeTask(Task task) {
+        if (!checkConnectMetaData()) {
+            return;
+        }
         Connection connection = null;
         try {
             connection = DriverManager.getConnection(getJdbcUrl(), username, password);
