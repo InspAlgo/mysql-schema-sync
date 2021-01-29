@@ -161,20 +161,23 @@ public class Arguments implements Runnable {
         if (filepath == null || filepath.isEmpty()) {
             return null;
         }
-        filepath = filepath.replaceAll("'", "").replaceAll("\"", "");
         Path path = null;
         try {
+            filepath = filepath.replaceAll("'", "").replaceAll("\"", "").trim();
             path = Paths.get(filepath);
-            if (type == FileLimitType.READ && Files.isReadable(path)) {
-                return path;
-            }
-            if (type == FileLimitType.WRITE && !preview) {
+            if (type == FileLimitType.READ) {
+                if (!Files.isReadable(path)) {
+                    path = null;
+                }
+            } else if (type == FileLimitType.WRITE && !preview) {
                 if (!Files.exists(path)) {
                     Files.createFile(path);
                 }
-                if (Files.isWritable(path)) {
-                    return path;
+                if (!Files.isWritable(path)) {
+                    path = null;
                 }
+            } else {
+                path = null;
             }
         } catch (Exception e) {
             Log.COMMON.error("路径 [{}] 不正确，请检查权限", filepath);
