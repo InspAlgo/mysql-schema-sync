@@ -5,7 +5,6 @@ import com.github.inspalgo.logic.Dispatcher;
 import com.github.inspalgo.logic.TargetMetaData;
 import com.github.inspalgo.util.Log;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -16,7 +15,6 @@ import java.util.Optional;
 import static picocli.CommandLine.ArgGroup;
 import static picocli.CommandLine.Command;
 import static picocli.CommandLine.Option;
-import static picocli.CommandLine.Parameters;
 
 /**
  * @author InspAlgo
@@ -28,35 +26,20 @@ public class Arguments implements Runnable {
     private String source;
 
     @ArgGroup(exclusive = false, multiplicity = "0..*")
-    private List<ConnectTarget> connectTargets;
-
-    @ArgGroup(exclusive = false, multiplicity = "0..*")
-    private List<FileTarget> fileTargets;
+    private List<Target> targets;
 
     @Option(names = {"-p", "--preview"}, description = "仅预览执行")
     private boolean preview = false;
 
-    private static class ConnectTarget {
-        @Option(names = {"-t", "--target"}, description = "指定目标：目前只有在线方式 -t mysql#username:password@host:port/database_name")
-        private String connect;
+    private static class Target {
+        @Option(names = {"-t", "--target"}, description = "指定目标：1.在线方式 -t mysql#username:password@host:port/database_name, 2.SQL文件方式  -t sql_filepath")
+        private String target;
         @Option(names = {"-o", "--output"}, description = "输出执行的差异DDL到指定文件中，-o filepath")
         private String outputFilepath;
 
         @Override
         public String toString() {
-            return String.format("ConnectTarget{%s,%s}", connect, outputFilepath);
-        }
-    }
-
-    private static class FileTarget {
-        @Option(names = {"-f", "--file"}, description = "目标为 SQL 文件，将自动生成DDL文件到指定路径，-f sql_filepath ddl_filepath")
-        private String fileSqlFilepath;
-        @Parameters
-        private String outputFilepath;
-
-        @Override
-        public String toString() {
-            return String.format("FileTarget{%s,%s}", fileSqlFilepath, outputFilepath);
+            return String.format("Target{%s,%s}", target, outputFilepath);
         }
     }
 
@@ -72,50 +55,32 @@ public class Arguments implements Runnable {
     }
 
     private Object getSource() {
-        Object sourceMetaData = null;
-
-        if (source != null) {
-            sourceMetaData = parseUri(source);
-            if (sourceMetaData == null) {
-                sourceMetaData = parseFilepath(source, FileLimitType.READ);
-            }
-            if (sourceMetaData == null) {
-                Log.COMMON.error("源数据库资源标识格式错误: [{}]", source);
-                System.exit(-1);
-            }
+        Object sourceMetaData = Optional.ofNullable((Object) parseUri(source))
+                                        .orElseGet(() -> parseFilepath(source, FileLimitType.READ));
+        if (source != null && sourceMetaData == null) {
+            Log.COMMON.error("源数据库资源标识格式错误: [{}]", source);
+            System.exit(-1);
         }
-
         return sourceMetaData;
     }
 
     private List<TargetMetaData> getTargetList() {
-        List<ConnectTarget> connectTargetList = Optional.ofNullable(connectTargets).orElse(new ArrayList<>());
-        List<FileTarget> fileTargetList = Optional.ofNullable(fileTargets).orElse(new ArrayList<>());
-        List<TargetMetaData> targetList = new ArrayList<>(connectTargetList.size() + fileTargetList.size());
+        List<Target> connectTargetList = Optional.ofNullable(targets).orElse(new ArrayList<>());
+        List<TargetMetaData> targetList = new ArrayList<>(connectTargetList.size());
 
-        for (ConnectTarget t : connectTargetList) {
-            ConnectMetaData target = parseUri(t.connect);
+        for (Target t : connectTargetList) {
+            Object target = Optional.ofNullable((Object) parseUri(t.target))
+                                    .orElseGet(() -> parseFilepath(t.target, FileLimitType.READ));
             if (target == null) {
                 Log.COMMON.error("目标数据库资源标识格式错误: [{}]", t);
                 System.exit(-1);
             }
             Path outputPath = parseFilepath(t.outputFilepath, FileLimitType.WRITE);
-            if (t.outputFilepath != null && outputPath == null) {
+            if (t.outputFilepath != null && outputPath == null && !preview) {
                 Log.COMMON.error("目标数据库输出路径错误: [{}]", t);
                 System.exit(-1);
             }
-            targetList.add(new TargetMetaData(TargetMetaData.TargetType.CONNECT, target, outputPath));
-        }
-
-        for (FileTarget t : fileTargetList) {
-            Path target = parseFilepath(t.fileSqlFilepath, FileLimitType.READ);
-            Path outputPath = parseFilepath(t.outputFilepath, FileLimitType.WRITE);
-            // 对于文件类型的目标，启动预览执行模式则不需要DDL输出文件
-            if (target == null || (outputPath == null && preview == false)) {
-                Log.COMMON.error("文件类型目标数据库格式错误: [{}]", t);
-                System.exit(-1);
-            }
-            targetList.add(new TargetMetaData(TargetMetaData.TargetType.FILE, target, outputPath));
+            targetList.add(new TargetMetaData(target, outputPath));
         }
 
         return targetList;
@@ -197,22 +162,23 @@ public class Arguments implements Runnable {
             return null;
         }
         filepath = filepath.replaceAll("'", "").replaceAll("\"", "");
-        Path path = Paths.get(filepath);
-        if (type == FileLimitType.READ && Files.isReadable(path)) {
-            return path;
-        }
-        if (type == FileLimitType.WRITE && preview == false) {
-            try {
+        Path path = null;
+        try {
+            path = Paths.get(filepath);
+            if (type == FileLimitType.READ && Files.isReadable(path)) {
+                return path;
+            }
+            if (type == FileLimitType.WRITE && !preview) {
                 if (!Files.exists(path)) {
                     Files.createFile(path);
                 }
                 if (Files.isWritable(path)) {
                     return path;
                 }
-            } catch (IOException e) {
-                Log.COMMON.error("路径 {} 无法创建", filepath);
             }
+        } catch (Exception e) {
+            Log.COMMON.error("路径 [{}] 不正确，请检查权限", filepath);
         }
-        return null;
+        return path;
     }
 }

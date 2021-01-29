@@ -138,8 +138,7 @@ public class Dispatcher {
                     targetDb.displayPreview();
                     Log.PREVIEW.info("=== `{}` DDL Preview End ===", targetDb.getDbName());
                 } else {
-                    targetDb.deleteTables();
-                    targetDb.addTables();
+                    targetDb.deleteAndAddTables();
                     targetDb.syncSchema();
                 }
 

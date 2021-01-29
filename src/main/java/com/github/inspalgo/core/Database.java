@@ -304,30 +304,6 @@ public class Database {
         tables.forEach(table -> addTablesDdlMap.put(table.getName(), table.getCreateTable()));
     }
 
-    public void addTables() {
-        if (addTablesDdlMap == null || addTablesDdlMap.size() == 0) {
-            Log.COMMON.info("`{}` Not Add Tables DDL.", dbName);
-            return;
-        }
-
-        executeTask(connection -> {
-            Statement statement = connection.createStatement();
-            List<String> ddlList = new ArrayList<>(addTablesDdlMap.size());
-            for (String tableName : addTablesDdlMap.keySet()) {
-                String ddl = addTablesDdlMap.get(tableName);
-                statement.addBatch(ddl);
-                ddlList.add(ddl);
-                Log.COMMON.info("TABLE `{}`.`{}` IS CREATED.", dbName, tableName);
-            }
-            try {
-                statement.executeBatch();
-            } catch (BatchUpdateException e) {
-                handleBatchUpdateException(connection, e, ddlList);
-            }
-            statement.close();
-        });
-    }
-
     public void generateDeleteTablesDdlList(final List<String> tableNames) {
         if (tableNames == null || tableNames.size() <= 0) {
             return;
@@ -339,20 +315,19 @@ public class Database {
         tableNames.forEach(tblName -> deleteTablesDdlMap.put(tblName, String.format("DROP TABLE `%s`", tblName)));
     }
 
-    public void deleteTables() {
-        if (deleteTablesDdlMap == null || deleteTablesDdlMap.size() == 0) {
-            Log.COMMON.info("`{}` Not Delete Tables DDL.", dbName);
-            return;
-        }
-
+    public void deleteAndAddTables() {
         executeTask(connection -> {
             Statement statement = connection.createStatement();
-            List<String> ddlList = new ArrayList<>(deleteTablesDdlMap.size());
+            List<String> ddlList = new ArrayList<>(deleteTablesDdlMap.size() + addTablesDdlMap.size());
             for (String tableName : deleteTablesDdlMap.keySet()) {
                 String ddl = deleteTablesDdlMap.get(tableName);
                 statement.addBatch(ddl);
                 ddlList.add(ddl);
-                Log.COMMON.info("TABLE `{}`.`{}` IS DELETED.", dbName, tableName);
+            }
+            for (String tableName : addTablesDdlMap.keySet()) {
+                String ddl = addTablesDdlMap.get(tableName);
+                statement.addBatch(ddl);
+                ddlList.add(ddl);
             }
             try {
                 statement.executeBatch();
@@ -395,7 +370,6 @@ public class Database {
 
     public void syncSchema() {
         if (syncSchemaDdlMap == null || syncSchemaDdlMap.size() == 0) {
-            Log.COMMON.info("`{}` Not Sync Schema DDL.", dbName);
             return;
         }
 
@@ -409,7 +383,6 @@ public class Database {
                     }
                     statement.executeBatch();
                     statement.clearBatch();
-                    Log.COMMON.info("TABLE `{}`.`{}` IS SYNCHRONIZED.", dbName, tableName);
                 } catch (BatchUpdateException e) {
                     handleBatchUpdateException(connection, e, ddlList);
                 }

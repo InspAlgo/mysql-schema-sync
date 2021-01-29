@@ -1,5 +1,7 @@
 package com.github.inspalgo.logic;
 
+import com.github.inspalgo.core.ConnectMetaData;
+
 import java.nio.file.Path;
 
 /**
@@ -7,7 +9,7 @@ import java.nio.file.Path;
  * @date 2021/1/28 16:40 UTC+08:00
  */
 public class TargetMetaData {
-    private TargetType type = TargetType.NONE;
+    private TargetType type;
     private Object target;
     private Path outputFilePath;
 
@@ -30,29 +32,22 @@ public class TargetMetaData {
         return type;
     }
 
-    public void setType(TargetType type) {
-        this.type = type;
-    }
-
     public Object getTarget() {
         return target;
-    }
-
-    public void setTarget(Object target) {
-        this.target = target;
     }
 
     public Path getOutputFilePath() {
         return outputFilePath;
     }
 
-    public void setOutputFilePath(Path outputFilePath) {
-        this.outputFilePath = outputFilePath;
-    }
-
-    public TargetMetaData(TargetType type, Object target, Path outputFilePath) {
-        this.type = type;
+    public TargetMetaData(Object target, Path outputFilePath) {
+        this.type = TargetType.NONE;
         this.target = target;
         this.outputFilePath = outputFilePath;
+        if (target instanceof ConnectMetaData) {
+            this.type = TargetType.CONNECT;
+        } else if (target instanceof Path) {
+            this.type = TargetType.FILE;
+        }
     }
 }
