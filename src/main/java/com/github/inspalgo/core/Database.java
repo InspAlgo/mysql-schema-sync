@@ -182,6 +182,9 @@ public class Database {
                 String tableName = resultSetTable.getString("TABLE_NAME");
                 table.setName(tableName);
                 String rowFormat = resultSetTable.getString("ROW_FORMAT");
+                if (rowFormat != null && !rowFormat.isEmpty()) {
+                    table.setRowFormat(rowFormat);
+                }
                 String createTable = "";
 
                 String queryCreateTable = "SHOW CREATE TABLE " + tableName;
@@ -223,22 +226,13 @@ public class Database {
                     table.addIndex(index);
                 }
 
-                List<String> attributes = parseAttributes(createTableLines[createTableLines.length - 1]);
-                for (String attribute : attributes) {
-                    if (attribute.startsWith("AUTO_INCREMENT")) {
-                        table.setAutoIncrement(attribute);
-                    } else if (attribute.startsWith("ROW_FORMAT")) {
-                        // 避免重复插入该属性
-                        rowFormat = attribute.substring(attribute.indexOf('=') + 1).trim();
-                    } else {
-                        table.addAttribute(attribute);
-                    }
-                }
-                if (rowFormat != null && !rowFormat.isEmpty()) {
-                    table.addAttribute(String.format("ROW_FORMAT=%s", rowFormat.toUpperCase()));
-                }
+                parseAttributes(table, createTableLines[createTableLines.length - 1]);
 
-                tableMap.put(tableName, table);
+                if (table.selfCheck()) {
+                    tableMap.put(tableName, table);
+                } else {
+                    Log.COMMON.error("`{}`.`{}` 数据异常", dbName, tableName);
+                }
             }
         } catch (SQLException e) {
             Log.COMMON.error("", e);
@@ -269,18 +263,13 @@ public class Database {
                 } else if (table != null && line.startsWith("PRIMARY KEY")) {
                     table.setPrimaryKey(parseIndex(line));
                 } else if (table != null && line.startsWith(")")) {
-                    List<String> attributes = parseAttributes(line);
-                    for (String attribute : attributes) {
-                        if (attribute.startsWith("AUTO_INCREMENT")) {
-                            table.setAutoIncrement(attribute);
-                        } else if (attribute.startsWith("ROW_FORMAT")) {
-                            table.addAttribute(attribute.toUpperCase());
-                        } else {
-                            table.addAttribute(attribute);
-                        }
-                    }
+                    parseAttributes(table, line);
 
-                    tableMap.put(tableName, table);
+                    if (table.selfCheck()) {
+                        tableMap.put(tableName, table);
+                    } else {
+                        Log.COMMON.error("`{}`.`{}` 数据异常", dbName, tableName);
+                    }
                     table = null;
                     tableName = null;
                     columnOrdinalPosition = 1;
@@ -312,7 +301,7 @@ public class Database {
             deleteTablesDdlMap.clear();
         }
         deleteTablesDdlMap = new HashMap<>(tableNames.size());
-        tableNames.forEach(tblName -> deleteTablesDdlMap.put(tblName, String.format("DROP TABLE `%s`", tblName)));
+        tableNames.forEach(tblName -> deleteTablesDdlMap.put(tblName, "DROP TABLE `" + tblName + "`"));
     }
 
     public void deleteAndAddTables() {
@@ -421,7 +410,7 @@ public class Database {
             }
             for (String ddl : addTablesDdlMap.values()) {
                 writer.write(ddl);
-                writer.write("\n");
+                writer.write(";\n");
             }
             for (List<String> ddlList : syncSchemaDdlMap.values()) {
                 for (String ddl : ddlList) {
@@ -529,6 +518,13 @@ public class Database {
         return ddl;
     }
 
+    private static StringBuilder removeLastComma(StringBuilder ddl) {
+        if (ddl.charAt(ddl.length() - 1) == ',') {
+            ddl.deleteCharAt(ddl.length() - 1);
+        }
+        return ddl;
+    }
+
     /**
      * 主键、索引解析
      *
@@ -536,15 +532,14 @@ public class Database {
      * @return 主键、索引
      */
     private static String parseIndex(String originDdl) {
-        originDdl = removeLastComma(originDdl);
+        StringBuilder sb = removeLastComma(new StringBuilder(originDdl));
 
-        // 因为 BTREE 是默认索引类型，所以比对时先将 USING BTREE 忽略掉
-        int btreeIndex = originDdl.lastIndexOf("USING BTREE");
-        if (btreeIndex != -1) {
-            originDdl = originDdl.substring(0, btreeIndex).trim();
+        // 因为 BTREE 是默认索引类型，所以不含 USING 的索引默认为使用 BTREE
+        if (sb.indexOf("USING") == -1) {
+            sb.append(" USING BTREE");
         }
 
-        return originDdl;
+        return sb.toString();
     }
 
     /**
@@ -553,9 +548,9 @@ public class Database {
      * @param ddl 表属性，CREATE TABLE 的最后一行
      * @return 表属性列表
      */
-    private static List<String> parseAttributes(String ddl) {
-        ArrayList<String> result = new ArrayList<>();
-        StringBuilder sb = new StringBuilder(ddl.length());
+    private static void parseAttributes(Table table, String ddl) {
+        StringBuilder key = new StringBuilder(ddl.length() / 2);
+        StringBuilder value = new StringBuilder(ddl.length() / 2);
         boolean skip = true;
         for (int i = 0, size = ddl.length(); i < size; i++) {
             char c = ddl.charAt(i);
@@ -564,7 +559,10 @@ public class Database {
             }
             skip = false;
             if (c == '=') {
-                sb.append(c);
+                while (key.charAt(key.length() - 1) == ' ') {
+                    key.deleteCharAt(key.length() - 1);
+                }
+
                 while (i + 1 < size && ddl.charAt(i + 1) == ' ') {
                     i++;
                 }
@@ -574,15 +572,31 @@ public class Database {
                         i = k;
                         break;
                     }
-                    sb.append(c);
+                    value.append(c);
                 }
-                result.add(sb.toString());
-                sb.delete(0, sb.length());
+
+                handleAttribute(table, key, value);
+
+                key.delete(0, key.length());
+                value.delete(0, value.length());
                 skip = true;
                 continue;
             }
-            sb.append(c);
+            key.append(c);
         }
-        return result;
+    }
+
+    private static void handleAttribute(Table table, StringBuilder key, StringBuilder value) {
+        if (key.indexOf("ENGINE") != -1) {
+            table.setEngine(value.toString());
+        } else if (key.indexOf("AUTO_INCREMENT") != -1) {
+            table.setAutoIncrement(value.toString());
+        } else if (key.indexOf("ROW_FORMAT") != -1) {
+            table.setRowFormat(value.toString());
+        } else if (key.indexOf("DEFAULT CHARSET") != -1 || key.indexOf("CHARACTER SET") != -1) {
+            table.setCharset(value.toString());
+        } else {
+            table.addAttribute(key.append("=").append(value).toString());
+        }
     }
 }
