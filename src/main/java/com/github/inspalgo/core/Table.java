@@ -10,10 +10,13 @@ import java.util.Objects;
  */
 public class Table {
     private String name;
-    private final List<Column> columns = new ArrayList<>();
-    private final List<String> indexes = new ArrayList<>();
+    private String engine = null;
+    private String charset = null;
     private String primaryKey = null;
     private String autoIncrement = null;
+    private String rowFormat = null;
+    private final List<Column> columns = new ArrayList<>();
+    private final List<String> indexes = new ArrayList<>();
     private final List<String> attributes = new ArrayList<>();
 
     public String getName() {
@@ -34,7 +37,7 @@ public class Table {
 
     public String getCreateTable() {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("CREATE TABLE `%s` (", name));
+        sb.append("CREATE TABLE `").append(name).append("` (");
         for (int i = 0, size = columns.size(); i < size; i++) {
             sb.append(" ").append(columns.get(i).getDdl());
             if (i < size - 1) {
@@ -47,7 +50,11 @@ public class Table {
         for (String index : indexes) {
             sb.append(", ").append(index);
         }
-        sb.append(" ) ").append(String.join(" ", attributes)).append(";");
+        sb.append(" ) ENGINE=").append(engine).append(" CHARACTER SET=").append(charset)
+          .append(" ").append(String.join(" ", attributes));
+        if (rowFormat != null) {
+            sb.append(" ROW_FORMAT=").append(rowFormat);
+        }
         return sb.toString();
     }
 
@@ -84,12 +91,36 @@ public class Table {
         this.primaryKey = primaryKey;
     }
 
+    public String getEngine() {
+        return engine;
+    }
+
+    public void setEngine(String engine) {
+        this.engine = engine;
+    }
+
     public String getAutoIncrement() {
         return autoIncrement;
     }
 
     public void setAutoIncrement(String autoIncrement) {
         this.autoIncrement = autoIncrement;
+    }
+
+    public String getCharset() {
+        return charset;
+    }
+
+    public void setCharset(String charset) {
+        this.charset = charset;
+    }
+
+    public String getRowFormat() {
+        return rowFormat;
+    }
+
+    public void setRowFormat(String rowFormat) {
+        this.rowFormat = rowFormat.toUpperCase();
     }
 
     public List<String> getAttributes() {
@@ -105,6 +136,21 @@ public class Table {
         attributes.add(attribute);
     }
 
+    /**
+     * 数据自检
+     *
+     * @return true-数据正常；false-数据存在异常，如缺少 ENGINE、CHARACTER SET 等关键数据
+     */
+    public boolean selfCheck() {
+        String[] properties = new String[]{name, engine, charset};
+        for (String property : properties) {
+            if (property == null || property.isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -114,7 +160,13 @@ public class Table {
             return false;
         }
         Table table = (Table) o;
-        return Objects.equals(name, table.name);
+        if (table.name == null || table.name.isEmpty()) {
+            return false;
+        }
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        return name.equals(table.name);
     }
 
     @Override
@@ -126,6 +178,11 @@ public class Table {
     public String toString() {
         return "Table{" +
             "name='" + name + '\'' +
+            ", engine='" + engine + '\'' +
+            ", charset='" + charset + '\'' +
+            ", primaryKey='" + primaryKey + '\'' +
+            ", autoIncrement='" + autoIncrement + '\'' +
+            ", rowFormat='" + rowFormat + '\'' +
             ", columns=" + columns +
             ", indexes=" + indexes +
             ", attributes=" + attributes +

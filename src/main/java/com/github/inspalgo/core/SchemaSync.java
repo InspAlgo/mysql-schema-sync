@@ -17,21 +17,27 @@ public class SchemaSync {
      */
     public static List<String> generateTableDdl(Table sourceTable, Table targetTable) {
         ArrayList<String> result = new ArrayList<>();
-        String tableName = targetTable.getName();
+        String alterTable = "ALTER TABLE `" + targetTable.getName() + "` ";
 
         // 表的属性比对，如引擎、字符集等，表属性要同步要先执行
         // 先排除表属性中的自增主键同步，因为值的大小根据各个库实际数据大小定，要创建自增主键，只需指定好自增字段即可
+        String sourceCharset = sourceTable.getCharset();
+        String targetCharset = targetTable.getCharset();
+        if (!sourceCharset.equalsIgnoreCase(targetCharset)) {
+            result.add(alterTable + "CONVERT TO CHARACTER SET " + sourceCharset);
+        }
+
         List<String> modifyAttributes = sourceTable.getAttributes();
         modifyAttributes.removeAll(targetTable.getAttributes());
         if (!modifyAttributes.isEmpty()) {
-            result.add(String.format("ALTER TABLE `%s` %s", tableName, String.join(",", modifyAttributes)));
+            result.add(alterTable + String.join(",", modifyAttributes));
         }
 
         // 删除多余字段
         ArrayList<String> deleteColumnNames = targetTable.getAllColumnNames();
         deleteColumnNames.removeAll(sourceTable.getAllColumnNames());
         for (String columnName : deleteColumnNames) {
-            result.add(String.format("ALTER TABLE `%s` DROP COLUMN `%s`", tableName, columnName));
+            result.add(alterTable + "DROP COLUMN `" + columnName + "`");
         }
 
         // 判断增加/修改字段，同时保持字段相对顺序同步
@@ -51,40 +57,39 @@ public class SchemaSync {
                 // 先判断字段属性是否相同，因为属性不同的话，位置可以一并修改，然后再判断位置是否相同
                 if (!sourceDdl.equals(targetTable.getColumnByName(sourceColumnName).getDdl())
                     || i != targetColumnNames.indexOf(sourceColumnName)) {
-                    result.add(String.format("ALTER TABLE `%s` MODIFY COLUMN %s %s", tableName, sourceDdl, position));
+                    result.add(alterTable + "MODIFY COLUMN " + sourceDdl + " " + position);
                     insertColumn(targetColumnNames, sourceColumnName, i);
                 }
             } else {
-                result.add(String.format("ALTER TABLE `%s` ADD COLUMN %s %s", tableName, sourceDdl, position));
+                result.add(alterTable + "ADD COLUMN " + sourceDdl + " " + position);
                 insertColumn(targetColumnNames, sourceColumnName, i);
             }
 
             // 因为 AFTER 表示在指定字段之后，所以 position 的取值应在循环内的最后一步，避开了对第一个字段的特殊判断
-            position = String.format("AFTER `%s`", sourceColumnNames.get(i));
+            position = "AFTER `" + sourceColumnNames.get(i) + "`";
         }
 
         // 主键同步
         String sourceTablePriKey = sourceTable.getPrimaryKey();
         String targetTablePriKey = targetTable.getPrimaryKey();
         if (sourceTablePriKey != null && targetTablePriKey == null) {
-            result.add(String.format("ALTER TABLE `%s` ADD %s", tableName, sourceTablePriKey));
+            result.add(alterTable + "ADD " + sourceTablePriKey);
         } else if (sourceTablePriKey == null && targetTablePriKey != null) {
-            result.add(String.format("ALTER TABLE `%s` DROP PRIMARY KEY", tableName));
+            result.add(alterTable + "DROP PRIMARY KEY");
         } else if (sourceTablePriKey != null && !sourceTablePriKey.equals(targetTablePriKey)) {
-            result.add(String.format("ALTER TABLE `%s` DROP PRIMARY KEY, ADD %s", tableName, sourceTablePriKey));
+            result.add(alterTable + "DROP PRIMARY KEY, ADD " + sourceTablePriKey);
         }
 
         // 索引同步
         List<String> deleteIndexes = targetTable.getIndexes();
         deleteIndexes.removeAll(sourceTable.getIndexes());
         for (String index : deleteIndexes) {
-            result.add(String.format("ALTER TABLE `%s` DROP KEY %s",
-                tableName, index.substring(index.indexOf('`'), index.indexOf('(')).trim()));
+            result.add(alterTable + "DROP KEY " + index.substring(index.indexOf('`'), index.indexOf('(')).trim());
         }
         List<String> addIndexes = sourceTable.getIndexes();
         addIndexes.removeAll(targetTable.getIndexes());
         for (String index : addIndexes) {
-            result.add(String.format("ALTER TABLE `%s` ADD %s", tableName, index));
+            result.add(alterTable + "ADD " + index);
         }
 
         return result;

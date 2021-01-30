@@ -20,7 +20,7 @@ import static picocli.CommandLine.Option;
  * @author InspAlgo
  * @date 2021/1/13 15:03 UTC+08:00
  */
-@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.5")
+@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.5.1")
 public class Arguments implements Runnable {
     @Option(names = {"-s", "--source"}, description = "指定源：1.在线方式 -s mysql#username:password@host:port/database_name, 2.SQL文件方式  -s sql_filepath")
     private String source;
@@ -76,7 +76,7 @@ public class Arguments implements Runnable {
                 System.exit(-1);
             }
             Path outputPath = parseFilepath(t.outputFilepath, FileLimitType.WRITE);
-            if (t.outputFilepath != null && outputPath == null && !preview) {
+            if (t.outputFilepath != null && outputPath == null) {
                 Log.COMMON.error("目标数据库输出路径错误: [{}]", t);
                 System.exit(-1);
             }
@@ -169,7 +169,7 @@ public class Arguments implements Runnable {
                 if (!Files.isReadable(path)) {
                     path = null;
                 }
-            } else if (type == FileLimitType.WRITE && !preview) {
+            } else if (type == FileLimitType.WRITE) {
                 if (!Files.exists(path)) {
                     Files.createFile(path);
                 }
