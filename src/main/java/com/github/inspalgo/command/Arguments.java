@@ -11,17 +11,25 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 
 import static picocli.CommandLine.ArgGroup;
 import static picocli.CommandLine.Command;
+import static picocli.CommandLine.IVersionProvider;
 import static picocli.CommandLine.Option;
 
 /**
  * @author InspAlgo
  * @date 2021/1/13 15:03 UTC+08:00
  */
-@Command(name = "MySQL Schema Sync", mixinStandardHelpOptions = true, version = "MySQL Schema Sync v0.5.1")
+@Command(name = "MySQL Schema Sync", versionProvider = Arguments.VersionProvider.class)
 public class Arguments implements Runnable {
+    @Option(names = {"-v", "--version"}, versionHelp = true, description = "显示版本号并退出")
+    private boolean versionRequested;
+
+    @Option(names = {"-h", "--help"}, usageHelp = true, description = "显示帮助信息")
+    boolean usageHelpRequested;
+
     @Option(names = {"-s", "--source"}, description = "指定源：1.在线方式 -s mysql#username:password@host:port/database_name, 2.SQL文件方式  -s sql_filepath")
     private String source;
 
@@ -29,7 +37,31 @@ public class Arguments implements Runnable {
     private List<Target> targets;
 
     @Option(names = {"-p", "--preview"}, description = "仅预览执行")
-    private boolean preview = false;
+    private boolean preview;
+
+    @Override
+    public void run() {
+        try {
+            new Dispatcher().setSource(getSource()).setTargetList(getTargetList())
+                            .setPreview(preview).schemaSync();
+        } catch (Exception e) {
+            Log.COMMON.error("", e);
+            System.exit(-1);
+        }
+    }
+
+    static class VersionProvider implements IVersionProvider {
+        @Override
+        public String[] getVersion() {
+            try {
+                final Properties properties = new Properties();
+                properties.load(Arguments.class.getClassLoader().getResourceAsStream("project.properties"));
+                return new String[]{properties.getProperty("version")};
+            } catch (Exception e) {
+                return new String[]{"Unable to read version from project.properties."};
+            }
+        }
+    }
 
     private static class Target {
         @Option(names = {"-t", "--target"}, description = "指定目标：1.在线方式 -t mysql#username:password@host:port/database_name, 2.SQL文件方式  -t sql_filepath")
@@ -40,17 +72,6 @@ public class Arguments implements Runnable {
         @Override
         public String toString() {
             return String.format("Target{%s,%s}", target, outputFilepath);
-        }
-    }
-
-    @Override
-    public void run() {
-        try {
-            new Dispatcher().setSource(getSource()).setTargetList(getTargetList())
-                            .setPreview(preview).schemaSync();
-        } catch (Exception e) {
-            Log.COMMON.error("", e);
-            System.exit(-1);
         }
     }
 
