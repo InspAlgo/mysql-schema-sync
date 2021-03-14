@@ -120,8 +120,8 @@ public class Arguments implements Runnable {
         uri = uri.replaceAll("'", "").replaceAll("\"", "");
         ConnectMetaData metaData = new ConnectMetaData();
         int sharp = uri.indexOf('#');
-        int at = uri.indexOf('@');
-        int slash = uri.indexOf('/');
+        int at = uri.lastIndexOf("@");
+        int slash = uri.indexOf('/', at);
         if (sharp == -1 || at == -1 || slash == -1) {
             return null;
         }
