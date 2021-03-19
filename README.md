@@ -1,18 +1,18 @@
 # mysql-schema-sync
-MySQL 表结构同步工具
+MySQL 表结构同步工具  
 
-## Features
--[x] 支持表的字段结构同步
--[x] 支持主键同步
--[x] 支持索引同步
--[ ] 不支持外键同步
--[ ] 不支持视图同步
+## Features  
+- [x] 支持表的字段结构同步  
+- [x] 支持主键同步  
+- [x] 支持索引同步  
+- [ ] 不支持外键同步  
+- [ ] 不支持视图同步  
 
 
 ## How to use
-从 [releases](https://github.com/InspAlgo/mysql-schema-sync/releases)  下载最新的 jar 文件（由 JDK8 编译构建）。
+从 [releases](https://github.com/InspAlgo/mysql-schema-sync/releases)  下载最新的 jar 文件（由 JDK8 编译构建）。  
 
-基本信息介绍
+基本信息介绍  
 ```
 $ java -jar mysql-schema-sync.jar -v
 v0.5.4
@@ -32,7 +32,7 @@ Usage: MySQL Schema Sync [-hpv] [-s=<source>] [[-t=<target>]
 ```
 
 
-同步表结构方式
+同步表结构方式  
 ```
 # 同步的源为 mysqldump 导出的表结构 sql 文件，被同步的为在线的库
 $ java -jar mysql-schema-sync.jar -s dump.sql -t mysql#root:root@127.0.0.1:3306/test_db
