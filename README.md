@@ -62,11 +62,11 @@ port/database_name 时，会根据「#、@、/」符号进行分隔，请 userna
 
 ## Future development plans  
 
-+ 能够使用触发器方式同步表结构  
++ 能够使用 Trigger 方式同步表结构  
 + 能够使用 Online DDL 方式同步表结构  
 
 
 ## License
 Copyright (c) [InspAlgo](https://github.com/InspAlgo). All rights reserved.  
 
-Licensed under the [MIT](LENCESE) license.  
+Licensed under the [MIT](LICENSE) license.  
