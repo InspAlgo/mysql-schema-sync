@@ -39,11 +39,15 @@ public class Arguments implements Runnable {
     @Option(names = {"-p", "--preview"}, description = "仅预览执行")
     private boolean preview;
 
+    @Option(names = {"-r", "--recreate-table-on-error"}, description = "在同步表结构失败时重新创建表")
+    private boolean recreateTableOnError;
+
     @Override
     public void run() {
         try {
             new Dispatcher().setSource(getSource()).setTargetList(getTargetList())
-                            .setPreview(preview).schemaSync();
+                            .setPreview(preview).setRecreateTableOnError(recreateTableOnError)
+                            .schemaSync();
         } catch (Exception e) {
             Log.COMMON.error("", e);
             System.exit(-1);

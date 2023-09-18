@@ -18,11 +18,17 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 public class Dispatcher {
     private boolean preview = false;
+    private boolean recreateTableOnError = false;
     private Object source = null;
     private List<TargetMetaData> targetList = null;
 
     public Dispatcher setPreview(boolean preview) {
         this.preview = preview;
+        return this;
+    }
+
+    public Dispatcher setRecreateTableOnError(boolean recreateTableOnError) {
+        this.recreateTableOnError = recreateTableOnError;
         return this;
     }
 
@@ -139,7 +145,7 @@ public class Dispatcher {
                     Log.PREVIEW.info("=== `{}` DDL Preview End ===", targetDb.getDbName());
                 } else {
                     targetDb.deleteAndAddTables();
-                    targetDb.syncSchema();
+                    targetDb.syncSchema(sourceDb, recreateTableOnError);
                 }
 
                 targetDb.outputDdlFile();

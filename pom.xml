@@ -6,7 +6,7 @@
 
     <groupId>com.github.inspalgo</groupId>
     <artifactId>mysql-schema-sync</artifactId>
-    <version>0.5.4</version>
+    <version>0.6.0</version>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
@@ -56,35 +56,35 @@
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.22</version>
+            <version>8.0.33</version>
         </dependency>
 
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
-            <version>4.6.1</version>
+            <version>4.7.3</version>
         </dependency>
 
         <dependency>
             <groupId>org.fusesource.jansi</groupId>
             <artifactId>jansi</artifactId>
-            <version>2.1.1</version>
+            <version>2.4.0</version>
         </dependency>
 
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-api</artifactId>
-            <version>2.14.1</version>
+            <version>2.20.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core</artifactId>
-            <version>2.14.1</version>
+            <version>2.20.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j-impl</artifactId>
-            <version>2.14.1</version>
+            <version>2.20.0</version>
         </dependency>
     </dependencies>
 </project>
