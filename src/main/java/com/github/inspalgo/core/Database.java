@@ -357,7 +357,7 @@ public class Database {
         executor.shutdownNow();
     }
 
-    public void syncSchema() {
+    public void syncSchema(Database sourceDb, boolean recreateTableOnError) {
         if (syncSchemaDdlMap == null || syncSchemaDdlMap.size() == 0) {
             return;
         }
@@ -374,6 +374,26 @@ public class Database {
                     statement.clearBatch();
                 } catch (BatchUpdateException e) {
                     handleBatchUpdateException(connection, e, ddlList);
+
+                    if (recreateTableOnError) {
+                        Table sourceTable = sourceDb.getTableByName(tableName);
+                        List<String> createDdlList = new ArrayList<>(2);
+                        createDdlList.add(String.format("DROP TABLE IF EXISTS `%s`", tableName));
+                        createDdlList.add(sourceTable.getCreateTable());
+
+                        try {
+                            for (String s : createDdlList) {
+                                statement.addBatch(s);
+                            }
+
+                            statement.executeBatch();
+                            statement.clearBatch();
+
+                            Log.COMMON.info("`{}`.`{}` Recreate Table Succeed.", dbName, tableName);
+                        } catch (BatchUpdateException re) {
+                            handleBatchUpdateException(connection, re, ddlList);
+                        }
+                    }
                 }
             }
             statement.close();

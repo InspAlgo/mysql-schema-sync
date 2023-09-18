@@ -24,20 +24,23 @@ MySQL 表结构同步工具
 基本信息介绍  
 ```
 $ java -jar mysql-schema-sync.jar -v
-v0.5.4
+v0.6.0
 
 $ java -jar mysql-schema-sync.jar -h
-Usage: MySQL Schema Sync [-hpv] [-s=<source>] [[-t=<target>]
+Usage: MySQL Schema Sync [-hprv] [-s=<source>] [[-t=<target>]
                          [-o=<outputFilepath>]]...
   -h, --help              显示帮助信息
   -o, --output=<outputFilepath>
                           输出执行的差异DDL到指定文件中，-o filepath
   -p, --preview           仅预览执行
+  -r, --recreate-table-on-error
+                          在同步表结构失败时重新创建表
   -s, --source=<source>   指定源：1.在线方式 -s mysql#username:password@host:
                             port/database_name, 2.SQL文件方式  -s sql_filepath
   -t, --target=<target>   指定目标：1.在线方式 -t mysql#username:password@host:
                             port/database_name, 2.SQL文件方式  -t sql_filepath
   -v, --version           显示版本号并退出
+
 ```
 
 
