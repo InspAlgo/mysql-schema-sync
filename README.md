@@ -23,9 +23,6 @@ MySQL 表结构同步工具
 
 基本信息介绍  
 ```
-$ java -jar mysql-schema-sync.jar -v
-v0.6.0
-
 $ java -jar mysql-schema-sync.jar -h
 Usage: MySQL Schema Sync [-hprv] [-s=<source>] [[-t=<target>]
                          [-o=<outputFilepath>]]...
@@ -55,18 +52,16 @@ $ java -jar mysql-schema-sync.jar -s dump.sql -t mysql#root:root@127.0.0.1:3306/
 # 由一个源库向多个目标库同步
 $ java -jar mysql-schema-sync.jar -s mysql#root:root@127.0.0.1:3306/source_db -t mysql#root:root@127.0.0.1:3306/target_db_a -t mysql#root:root@127.0.0.1:3306/target_db_b
 
+# 如果某些表结构同步失败，例如变更字段类型，但由于目标库中该表的对应字段有旧值导致失败
+# 则可以使用 -r 参数来强制重新生成对应表，内部会先删除对应表，再创建对应表
+$ java -jar mysql-schema-sync.jar -r -s dump.sql -t mysql#root:root@127.0.0.1:3306/test_db
+
 # 使用 -o 参数输出 DDL 语句
 $ java -jar mysql-schema-sync.jar -s mysql#root:root@127.0.0.1:3306/source_db -t mysql#root:root@127.0.0.1:3306/target_db_a -o ddl_1.sql -t mysql#root:root@127.0.0.1:3306/target_db_b -o ddl_2.sql
 ```
 
 > 注：若没有参数，则会抛出异常。同时由于解析 mysql#username:password@host:
 port/database_name 时，会根据「#、@、/」符号进行分隔，请 username、password、database_name 中尽量不要携带这些字符（password 中带有「#、@」无妨）。 
-
-
-## Future development plans  
-
-+ 能够使用 Trigger 方式同步表结构  
-+ 能够使用 Online DDL 方式同步表结构  
 
 
 ## License

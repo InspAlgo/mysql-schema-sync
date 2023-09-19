@@ -376,6 +376,8 @@ public class Database {
                     handleBatchUpdateException(connection, e, ddlList);
 
                     if (recreateTableOnError) {
+                        Log.COMMON.info("`{}`.`{}` Recreate Table Start.", dbName, tableName);
+
                         Table sourceTable = sourceDb.getTableByName(tableName);
                         List<String> createDdlList = new ArrayList<>(2);
                         createDdlList.add(String.format("DROP TABLE IF EXISTS `%s`", tableName));
@@ -391,7 +393,7 @@ public class Database {
 
                             Log.COMMON.info("`{}`.`{}` Recreate Table Succeed.", dbName, tableName);
                         } catch (BatchUpdateException re) {
-                            handleBatchUpdateException(connection, re, ddlList);
+                            handleBatchUpdateException(connection, re, createDdlList);
                         }
                     }
                 }
