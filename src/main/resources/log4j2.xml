@@ -2,10 +2,10 @@
 <Configuration status="INFO">
     <Appenders>
         <Console name="ConsoleCommon" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{yyy-MM-dd HH:mm:ss.SSS} [%t] %level %logger (%F:%L) - %msg%n"/>
+            <PatternLayout pattern="%d{yyy-MM-dd HH:mm:ss.SSS} [%t] %level %logger (%F:%L) - %msg%n" charset="UTF-8"/>
         </Console>
         <Console name="ConsolePreview" target="SYSTEM_OUT">
-            <PatternLayout pattern="%msg%n"/>
+            <PatternLayout pattern="%msg%n" charset="UTF-8"/>
         </Console>
         <!--        <File name="FileAppender" fileName="logs/${date:yyyy-MM-dd}.log" immediateFlush="false" append="true">-->
         <!--            <PatternLayout pattern="%d{yyy-MM-dd HH:mm:ss.SSS} [%t] %level %logger (%F:%L) - %msg%n"/>-->
